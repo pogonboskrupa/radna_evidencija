@@ -48,7 +48,7 @@ const MONTH_NAMES = [
 ];
 const NO_GROUP = "__bez_grupe__";
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
-const APP_VERSION = "v1.2.3";
+const APP_VERSION = "v1.2.4";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -725,18 +725,20 @@ function RadniciTab({ workers, saveWorkers, groups, saveGroups, year, setYear, o
     }
   ), /* @__PURE__ */ React.createElement("button", { onClick: addWorker, style: styles.primaryBtn }, "Dodaj radnika"), /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(FilterCount, { shown: visibleWorkers.length, total: workers.length, active: filterActive })), /* @__PURE__ */ React.createElement("div", { style: styles.yearPicker }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, "Godi\u0161nji odmor za godinu:"), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year - 1) }, /* @__PURE__ */ React.createElement(IconChevronLeft, { size: 16 })), /* @__PURE__ */ React.createElement("div", { style: styles.monthLabel }, year), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year + 1) }, /* @__PURE__ */ React.createElement(IconChevronRight, { size: 16 })))), visibleWorkers.length === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: "Nema radnika koji odgovaraju pretrazi." }) : /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, textAlign: "left" } }, "Radnik"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Grupa"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Dana godi\u0161njeg (", year, ")"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Status"), /* @__PURE__ */ React.createElement("th", { style: styles.th }))), /* @__PURE__ */ React.createElement("tbody", null, visibleWorkers.map((w) => {
     var _a, _b;
-    return /* @__PURE__ */ React.createElement("tr", { key: w.id, className: "hover-row", style: w.active === false ? { opacity: 0.5 } : void 0 }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, textAlign: "left" } }, /* @__PURE__ */ React.createElement("button", { style: styles.workerNameBtn, onClick: () => onSelectWorker(w.id) }, w.name)), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement("select", { value: w.groupId || "", onChange: (e) => setWorkerGroup(w.id, e.target.value), style: styles.select }, /* @__PURE__ */ React.createElement("option", { value: "" }, "\u2014 bez grupe \u2014"), groups.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.name)))), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement(
+    const lockedByCard = hasAnnualDays(w);
+    return /* @__PURE__ */ React.createElement("tr", { key: w.id, className: "hover-row", style: w.active === false ? { opacity: 0.5 } : void 0 }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, textAlign: "left" } }, /* @__PURE__ */ React.createElement("button", { style: styles.workerNameBtn, onClick: () => onSelectWorker(w.id) }, w.name)), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement("select", { value: w.groupId || "", onChange: (e) => setWorkerGroup(w.id, e.target.value), style: styles.select }, /* @__PURE__ */ React.createElement("option", { value: "" }, "\u2014 bez grupe \u2014"), groups.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.name)))), /* @__PURE__ */ React.createElement("td", { style: styles.td }, lockedByCard ? /* @__PURE__ */ React.createElement("span", { title: "Postavljeno u kartonu radnika (Broj dana godi\u0161njeg)" }, w.leaveAnnualDays) : /* @__PURE__ */ React.createElement(
       "input",
       {
         type: "number",
         min: 0,
+        max: 365,
         value: (_b = (_a = w.godisnji) == null ? void 0 : _a[year]) != null ? _b : "",
         onChange: (e) => updateGodisnji(w.id, e.target.value),
         style: styles.smallInput,
         placeholder: "\u2014"
       }
     )), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement("button", { style: styles.linkBtn, onClick: () => toggleActive(w.id) }, w.active === false ? "Aktiviraj" : "Deaktiviraj")), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement("button", { style: { ...styles.linkBtn, color: "#dc2626" }, onClick: () => removeWorker(w.id) }, "Ukloni")));
-  }))), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, 'Broj dana godi\u0161njeg odmora unosi se svake godine posebno (rje\u0161enje se izdaje obi\u010Dno u junu). Preostali dani se automatski ra\u010Dunaju u "Rekapitulaciji" na osnovu svih unesenih "G" dana kroz cijelu godinu.'));
+  }))), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, 'Broj dana godi\u0161njeg odmora unosi se ovdje svake godine posebno (rje\u0161enje se izdaje obi\u010Dno u junu/julu), ili jednom u kartonu radnika ("Broj dana godi\u0161njeg po ugovoru") \u2014 tada se koristi svake godine i ovdje se ne mo\u017Ee mijenjati. Preostali dani se automatski ra\u010Dunaju u "Rekapitulaciji" i "Godi\u0161njem odmoru" na osnovu svih unesenih "G" dana kroz cijelu godinu.'));
 }
 function RekapTab({ workers, groups, year, setYear, month, setMonth, yearEntries, recapLoading, countsForWorkerMonth, yearGodisnjiUsed, onSelectWorker }) {
   const totals = Object.fromEntries(STATUSES.map((s) => [s.code, 0]));
