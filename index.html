@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="bs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Šihta — evidencija radnog vremena</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #faf7f0; }
+  #root { min-height: 100vh; }
+</style>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#1f4d3d" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { useState, useEffect, useCallback, useMemo } = React;
+const STATUSES = [
+  { code: "K", label: "Kancelarija", short: "kancelarija", color: "#3b5b74" },
+  { code: "T", label: "Teren", short: "teren", color: "#3f7d5c" },
+  { code: "G", label: "Godi\u0161nji", short: "godi\u0161nji odmor", color: "#c08a2e" },
+  { code: "Z", label: "Zastoj", short: "zastoj", color: "#c2662d" },
+  { code: "B", label: "Bolovanje", short: "bolovanje", color: "#a3423a" },
+  { code: "P", label: "Praznik", short: "praznik", color: "#6b4b8a" },
+  { code: "PO", label: "Pla\u0107. odsustvo", short: "pla\u0107eno odsustvo", color: "#7a8a3e" },
+  { code: "NO", label: "Nepla\u0107. odsustvo", short: "nepla\u0107eno odsustvo", color: "#8a7f70" },
+  { code: "ND", label: "Neopravdan dan", short: "neopravdan dan", color: "#5c1f1f" }
+];
+const STATUS_MAP = Object.fromEntries(STATUSES.map((s) => [s.code, s]));
+const DAY_LETTERS = ["N", "P", "U", "S", "\u010C", "P", "S"];
+const MONTH_NAMES = [
+  "Januar",
+  "Februar",
+  "Mart",
+  "April",
+  "Maj",
+  "Juni",
+  "Juli",
+  "August",
+  "Septembar",
+  "Oktobar",
+  "Novembar",
+  "Decembar"
+];
+const NO_GROUP = "__bez_grupe__";
+const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
+function daysInMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+function isWeekend(year, month, day) {
+  const dow = new Date(year, month - 1, day).getDay();
+  return dow === 0 || dow === 6;
+}
+function Icon({ children, size = 16, style, strokeWidth = 1.8 }) {
+  return /* @__PURE__ */ React.createElement(
+    "svg",
+    {
+      width: size,
+      height: size,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      style: { display: "inline-block", verticalAlign: "middle", flexShrink: 0, ...style }
+    },
+    children
+  );
+}
+const IconPrint = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "M6 9V2h12v7" }), /* @__PURE__ */ React.createElement("path", { d: "M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" }), /* @__PURE__ */ React.createElement("rect", { x: "6", y: "14", width: "12", height: "8", rx: "0.5" }));
+const IconCamera = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" }), /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "13", r: "4" }));
+const IconSave = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" }), /* @__PURE__ */ React.createElement("path", { d: "M17 21v-8H7v8" }), /* @__PURE__ */ React.createElement("path", { d: "M7 3v5h8" }));
+const IconClose = (p) => /* @__PURE__ */ React.createElement(Icon, { strokeWidth: 2.2, ...p }, /* @__PURE__ */ React.createElement("path", { d: "M18 6 6 18" }), /* @__PURE__ */ React.createElement("path", { d: "M6 6l12 12" }));
+const IconChevronLeft = (p) => /* @__PURE__ */ React.createElement(Icon, { strokeWidth: 2.2, ...p }, /* @__PURE__ */ React.createElement("path", { d: "M15 18l-6-6 6-6" }));
+const IconChevronRight = (p) => /* @__PURE__ */ React.createElement(Icon, { strokeWidth: 2.2, ...p }, /* @__PURE__ */ React.createElement("path", { d: "M9 18l6-6-6-6" }));
+const IconUsers = (p) => /* @__PURE__ */ React.createElement(Icon, { size: 40, strokeWidth: 1.4, ...p }, /* @__PURE__ */ React.createElement("path", { d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" }), /* @__PURE__ */ React.createElement("circle", { cx: "9", cy: "7", r: "4" }), /* @__PURE__ */ React.createElement("path", { d: "M23 21v-2a4 4 0 0 0-3-3.87" }), /* @__PURE__ */ React.createElement("path", { d: "M16 3.13a4 4 0 0 1 0 7.75" }));
+function Spinner() {
+  return /* @__PURE__ */ React.createElement("svg", { width: "18", height: "18", viewBox: "0 0 24 24", className: "spin", style: { display: "inline-block", verticalAlign: "middle" } }, /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "12", r: "9", fill: "none", stroke: "#e8e0cf", strokeWidth: "3" }), /* @__PURE__ */ React.createElement("path", { d: "M21 12a9 9 0 0 0-9-9", fill: "none", stroke: GOLD, strokeWidth: "3", strokeLinecap: "round" }));
+}
+function LoadingLine({ text }) {
+  return /* @__PURE__ */ React.createElement("div", { style: { padding: 24, color: "#8a7f6d", display: "flex", alignItems: "center", gap: 10, fontSize: 13 } }, /* @__PURE__ */ React.createElement(Spinner, null), " ", text);
+}
+function normalizeText(s) {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z\s]/g, "").replace(/\s+/g, " ").trim();
+}
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+function bestWorkerMatch(rawLine, workers) {
+  const norm = normalizeText(rawLine);
+  if (!norm || norm.length < 3 || workers.length === 0) return null;
+  let best = null;
+  let bestScore = Infinity;
+  workers.forEach((w) => {
+    const wn = normalizeText(w.name);
+    if (!wn) return;
+    let dist = levenshtein(norm, wn);
+    if (norm.includes(wn) || wn.includes(norm)) dist -= Math.min(norm.length, wn.length) * 0.5;
+    if (dist < bestScore) {
+      bestScore = dist;
+      best = w;
+    }
+  });
+  const threshold = Math.max(3, Math.floor(normalizeText((best == null ? void 0 : best.name) || "").length * 0.55));
+  return bestScore <= threshold ? best : null;
+}
+const CODE_TOKEN_RE = /\b(PO|NO|ND|K|T|G|Z|B|P)\b/g;
+function extractCodes(line) {
+  const matches = (line || "").toUpperCase().match(CODE_TOKEN_RE) || [];
+  return matches.join(" ");
+}
+const STORAGE_PREFIX = "sihta:";
+async function storageGet(key, fallback) {
+  try {
+    const v = localStorage.getItem(STORAGE_PREFIX + key);
+    return v ? JSON.parse(v) : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+async function storageSet(key, value) {
+  try {
+    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+  } catch (e) {
+    console.error("Gre\u0161ka pri spremanju:", e);
+  }
+}
+async function storageListKeys() {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(STORAGE_PREFIX)) keys.push(k.slice(STORAGE_PREFIX.length));
+  }
+  return keys;
+}
+async function exportAllData() {
+  const keys = await storageListKeys();
+  const data = {};
+  for (const k of keys) {
+    if (k === "lastBackupAt") continue;
+    data[k] = await storageGet(k, null);
+  }
+  return { app: "sihta", version: 1, exportedAt: (/* @__PURE__ */ new Date()).toISOString(), data };
+}
+function triggerJsonDownload(filename, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+async function importAllData(parsed) {
+  if (!parsed || typeof parsed.data !== "object") throw new Error("Fajl nije prepoznat kao \u0160ihta backup.");
+  const entries = Object.entries(parsed.data);
+  for (const [k, v] of entries) {
+    await storageSet(k, v);
+  }
+  return entries.length;
+}
+function App() {
+  const [tab, setTab] = useState("unos");
+  const [loaded, setLoaded] = useState(false);
+  const [workers, setWorkers] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const now = /* @__PURE__ */ new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [entries, setEntries] = useState({});
+  const [brush, setBrush] = useState("K");
+  const [yearEntries, setYearEntries] = useState(null);
+  const [recapLoading, setRecapLoading] = useState(false);
+  const entriesKey = `entries:${year}-${pad(month)}`;
+  useEffect(() => {
+    (async () => {
+      const w = await storageGet("workers-data", []);
+      const g = await storageGet("groups-data", []);
+      setWorkers(w);
+      setGroups(g);
+      setLoaded(true);
+    })();
+  }, []);
+  useEffect(() => {
+    if (!loaded) return;
+    (async () => {
+      const e = await storageGet(entriesKey, {});
+      setEntries(e);
+    })();
+  }, [entriesKey, loaded]);
+  const saveWorkers = useCallback((updater) => {
+    setWorkers((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      storageSet("workers-data", next);
+      return next;
+    });
+  }, []);
+  const saveGroups = useCallback((updater) => {
+    setGroups((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      storageSet("groups-data", next);
+      return next;
+    });
+  }, []);
+  const setCell = useCallback(
+    (workerId, day, code) => {
+      setEntries((prev) => {
+        const existing = prev[workerId] || {};
+        const next = { ...prev, [workerId]: { ...existing } };
+        delete next[workerId].__recap;
+        if (code) next[workerId][day] = code;
+        else delete next[workerId][day];
+        storageSet(entriesKey, next);
+        return next;
+      });
+    },
+    [entriesKey]
+  );
+  const setWorkerRecap = useCallback(
+    (workerId, counts) => {
+      setEntries((prev) => {
+        const next = { ...prev, [workerId]: { __recap: counts } };
+        storageSet(entriesKey, next);
+        return next;
+      });
+    },
+    [entriesKey]
+  );
+  const clearWorkerRecap = useCallback(
+    (workerId) => {
+      setEntries((prev) => {
+        const next = { ...prev, [workerId]: {} };
+        storageSet(entriesKey, next);
+        return next;
+      });
+    },
+    [entriesKey]
+  );
+  const [detailWorkerId, setDetailWorkerId] = useState(null);
+  const [ocrModalOpen, setOcrModalOpen] = useState(false);
+  const [backupModalOpen, setBackupModalOpen] = useState(false);
+  const nDays = daysInMonth(year, month);
+  const dayArr = Array.from({ length: nDays }, (_, i) => i + 1);
+  const loadYear = useCallback(async () => {
+    setRecapLoading(true);
+    const result = {};
+    for (let m = 1; m <= 12; m++) {
+      result[m] = await storageGet(`entries:${year}-${pad(m)}`, {});
+    }
+    setYearEntries(result);
+    setRecapLoading(false);
+  }, [year]);
+  useEffect(() => {
+    if (tab === "rekap" || tab === "godisnji") loadYear();
+  }, [tab, year, loadYear]);
+  function countsForWorkerMonth(workerId, m, allEntries) {
+    var _a;
+    const counts = Object.fromEntries(STATUSES.map((s) => [s.code, 0]));
+    const monthEntries = (_a = allEntries == null ? void 0 : allEntries[m]) == null ? void 0 : _a[workerId];
+    if (!monthEntries) return counts;
+    if (monthEntries.__recap) {
+      STATUSES.forEach((s) => counts[s.code] = monthEntries.__recap[s.code] || 0);
+      return counts;
+    }
+    Object.values(monthEntries).forEach((code) => {
+      if (counts[code] !== void 0) counts[code]++;
+    });
+    return counts;
+  }
+  function yearGodisnjiUsed(workerId) {
+    var _a;
+    if (!yearEntries) return 0;
+    let sum = 0;
+    for (let m = 1; m <= 12; m++) {
+      const monthEntries = (_a = yearEntries[m]) == null ? void 0 : _a[workerId];
+      if (!monthEntries) continue;
+      if (monthEntries.__recap) sum += monthEntries.__recap.G || 0;
+      else sum += Object.values(monthEntries).filter((c) => c === "G").length;
+    }
+    return sum;
+  }
+  return /* @__PURE__ */ React.createElement("div", { style: styles.app }, /* @__PURE__ */ React.createElement("style", null, GLOBAL_CSS), /* @__PURE__ */ React.createElement("div", { className: "app-shell" }, /* @__PURE__ */ React.createElement("header", { style: { ...styles.header }, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.brandRow }, /* @__PURE__ */ React.createElement("div", { style: styles.monogram }, "\u0160"), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: styles.companyName }, COMPANY_NAME), /* @__PURE__ */ React.createElement("div", { style: styles.title }, "\u0160ihta"), /* @__PURE__ */ React.createElement("div", { style: styles.subtitle }, "Evidencija radnog vremena"))), /* @__PURE__ */ React.createElement("nav", { style: styles.nav }, [
+    ["unos", "Unos \u0161ihte"],
+    ["radnici", "Radnici i grupe"],
+    ["rekap", "Rekapitulacija"],
+    ["godisnji", "Godi\u0161nji odmor"]
+  ].map(([key, label]) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key,
+      onClick: () => setTab(key),
+      style: { ...styles.navBtn, ...tab === key ? styles.navBtnActive : {} }
+    },
+    label
+  )), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Sigurnosna kopija podataka", onClick: () => setBackupModalOpen(true) }, /* @__PURE__ */ React.createElement(IconSave, { size: 14 }), " Backup"))), !loaded ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "U\u010Ditavanje..." }) : tab === "unos" ? /* @__PURE__ */ React.createElement(
+    UnosTab,
+    {
+      workers,
+      groups,
+      year,
+      setYear,
+      month,
+      setMonth,
+      entries,
+      setCell,
+      brush,
+      setBrush,
+      dayArr,
+      onSelectWorker: setDetailWorkerId,
+      onOpenOcr: () => setOcrModalOpen(true)
+    }
+  ) : tab === "radnici" ? /* @__PURE__ */ React.createElement(
+    RadniciTab,
+    {
+      workers,
+      saveWorkers,
+      groups,
+      saveGroups,
+      year,
+      setYear,
+      onSelectWorker: setDetailWorkerId
+    }
+  ) : tab === "rekap" ? /* @__PURE__ */ React.createElement(
+    RekapTab,
+    {
+      workers,
+      groups,
+      year,
+      setYear,
+      month,
+      setMonth,
+      yearEntries,
+      recapLoading,
+      countsForWorkerMonth,
+      yearGodisnjiUsed,
+      onSelectWorker: setDetailWorkerId
+    }
+  ) : /* @__PURE__ */ React.createElement(
+    GodisnjiTab,
+    {
+      workers,
+      saveWorkers,
+      groups,
+      year,
+      setYear,
+      yearEntries,
+      recapLoading,
+      yearGodisnjiUsed,
+      onSelectWorker: setDetailWorkerId
+    }
+  )), detailWorkerId && workers.find((w) => w.id === detailWorkerId) && /* @__PURE__ */ React.createElement(
+    WorkerDetailModal,
+    {
+      worker: workers.find((w) => w.id === detailWorkerId),
+      groups,
+      year,
+      month,
+      entries,
+      setWorkerRecap,
+      clearWorkerRecap,
+      yearGodisnjiUsed,
+      onClose: () => setDetailWorkerId(null)
+    }
+  ), ocrModalOpen && /* @__PURE__ */ React.createElement(
+    OcrImportModal,
+    {
+      workers: workers.filter((w) => w.active !== false),
+      year,
+      month,
+      dayArr,
+      setCell,
+      onClose: () => setOcrModalOpen(false)
+    }
+  ), backupModalOpen && /* @__PURE__ */ React.createElement(BackupModal, { onClose: () => setBackupModalOpen(false) }));
+}
+function PrintTitle({ children }) {
+  return /* @__PURE__ */ React.createElement("div", { className: "print-title", style: { display: "none" } }, /* @__PURE__ */ React.createElement("div", { style: styles.printCompanyLine }, COMPANY_NAME), /* @__PURE__ */ React.createElement("div", null, children));
+}
+function MonthNav({ year, setYear, month, setMonth }) {
+  function shift(delta) {
+    let m = month + delta;
+    let y = year;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+    if (m < 1) {
+      m = 12;
+      y--;
+    }
+    setMonth(m);
+    setYear(y);
+  }
+  return /* @__PURE__ */ React.createElement("div", { style: styles.monthNav }, /* @__PURE__ */ React.createElement("button", { className: "no-print", style: styles.iconBtn, onClick: () => shift(-1) }, /* @__PURE__ */ React.createElement(IconChevronLeft, { size: 16 })), /* @__PURE__ */ React.createElement("div", { style: styles.monthLabel }, MONTH_NAMES[month - 1], " ", year), /* @__PURE__ */ React.createElement("button", { className: "no-print", style: styles.iconBtn, onClick: () => shift(1) }, /* @__PURE__ */ React.createElement(IconChevronRight, { size: 16 })));
+}
+function computeGroupedWorkers(workers, groups, search, groupFilter) {
+  const q = search.trim().toLowerCase();
+  const filtered = workers.filter((w) => w.active !== false).filter((w) => !q || w.name.toLowerCase().includes(q)).filter((w) => groupFilter === "all" || (w.groupId || NO_GROUP) === groupFilter);
+  const byGroup = {};
+  filtered.forEach((w) => {
+    const gid = w.groupId || NO_GROUP;
+    if (!byGroup[gid]) byGroup[gid] = [];
+    byGroup[gid].push(w);
+  });
+  const order = [...groups.map((g) => g.id), NO_GROUP].filter((gid) => byGroup[gid]);
+  return order.map((gid) => {
+    var _a;
+    return {
+      id: gid,
+      name: gid === NO_GROUP ? "Bez grupe" : ((_a = groups.find((g) => g.id === gid)) == null ? void 0 : _a.name) || "?",
+      workers: byGroup[gid]
+    };
+  });
+}
+function GroupFilter({ groups, groupFilter, setGroupFilter }) {
+  return /* @__PURE__ */ React.createElement("select", { className: "no-print", value: groupFilter, onChange: (e) => setGroupFilter(e.target.value), style: styles.select }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "Sve grupe"), groups.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.name)), /* @__PURE__ */ React.createElement("option", { value: NO_GROUP }, "Bez grupe"));
+}
+function SearchBox({ search, setSearch }) {
+  return /* @__PURE__ */ React.createElement("div", { style: styles.searchWrap, className: "no-print" }, /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      value: search,
+      onChange: (e) => setSearch(e.target.value),
+      placeholder: "Pretra\u017Ei radnika...",
+      style: search ? { ...styles.input, paddingRight: 28 } : styles.input
+    }
+  ), search && /* @__PURE__ */ React.createElement("button", { style: styles.searchClearBtn, onClick: () => setSearch(""), title: "Obri\u0161i pretragu" }, /* @__PURE__ */ React.createElement(IconClose, { size: 11, strokeWidth: 2.4 })));
+}
+function FilterCount({ shown, total, active }) {
+  if (!active) return null;
+  return /* @__PURE__ */ React.createElement("span", { className: "no-print", style: styles.filterCount }, "Prikazano ", shown, " od ", total, " radnika \u2014 aktivan filter");
+}
+function recapSummaryText(counts) {
+  const parts = STATUSES.filter((s) => ((counts == null ? void 0 : counts[s.code]) || 0) > 0).map((s) => `${counts[s.code]} ${s.short}`);
+  return parts.length ? parts.join(", ") : "bez unesenih dana";
+}
+function UnosTab({ workers, groups, year, setYear, month, setMonth, entries, setCell, brush, setBrush, dayArr, onSelectWorker, onOpenOcr }) {
+  const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const activeTotal = workers.filter((w) => w.active !== false).length;
+  const groupedWorkers = useMemo(
+    () => computeGroupedWorkers(workers, groups, search, groupFilter),
+    [workers, groups, search, groupFilter]
+  );
+  const totalWorkers = groupedWorkers.reduce((s, g) => s + g.workers.length, 0);
+  const filterActive = search.trim() !== "" || groupFilter !== "all";
+  return /* @__PURE__ */ React.createElement("div", { style: styles.panel }, /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement(MonthNav, { year, setYear, month, setMonth }), /* @__PURE__ */ React.createElement("div", { style: styles.brushRow }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b", marginRight: 4 } }, "Kist:"), STATUSES.map((s) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: s.code,
+      onClick: () => setBrush(s.code),
+      title: s.label,
+      style: {
+        ...styles.brushBtn,
+        background: brush === s.code ? s.color : "#fff",
+        color: brush === s.code ? "#fff" : s.color,
+        borderColor: s.color
+      }
+    },
+    s.code
+  )), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => setBrush(null),
+      title: "Obri\u0161i",
+      style: { ...styles.brushBtn, background: brush === null ? "#1e293b" : "#fff", color: brush === null ? "#fff" : "#1e293b" }
+    },
+    "\u232B"
+  ))), /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: totalWorkers, total: activeTotal, active: filterActive })), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: onOpenOcr }, /* @__PURE__ */ React.createElement(IconCamera, { size: 15 }), " Uvoz sa slike (OCR)"), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " \u0160tampaj"))), /* @__PURE__ */ React.createElement(PrintTitle, null, "\u0160ihta \u2014 ", MONTH_NAMES[month - 1], " ", year), totalWorkers === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: filterActive ? "Nema radnika koji odgovaraju pretrazi/filteru." : "Nema dodanih radnika. Dodaj ih u tabu 'Radnici i grupe'." }) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), dayArr.map((d) => {
+    const weekend = isWeekend(year, month, d);
+    return /* @__PURE__ */ React.createElement("th", { key: d, style: { ...styles.th, ...weekend ? styles.weekendHeader : {}, width: 30 } }, /* @__PURE__ */ React.createElement("div", null, d), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 400, opacity: 0.7 } }, DAY_LETTERS[new Date(year, month - 1, d).getDay()]));
+  }))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: dayArr.length + 1, style: styles.groupHeader }, grp.name)), grp.workers.map((w) => {
+    var _a;
+    const recap = (_a = entries[w.id]) == null ? void 0 : _a.__recap;
+    return /* @__PURE__ */ React.createElement("tr", { key: w.id }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, ...styles.stickyCol, textAlign: "left" } }, /* @__PURE__ */ React.createElement("button", { style: styles.workerNameBtn, onClick: () => onSelectWorker(w.id) }, w.name)), recap ? /* @__PURE__ */ React.createElement("td", { colSpan: dayArr.length, style: styles.recapRow }, /* @__PURE__ */ React.createElement("span", { style: styles.recapRowBadge }, "REKAP"), " ", recapSummaryText(recap), /* @__PURE__ */ React.createElement("button", { style: styles.recapEditBtn, onClick: () => onSelectWorker(w.id) }, "Uredi")) : dayArr.map((d) => {
+      var _a2;
+      const code = (_a2 = entries[w.id]) == null ? void 0 : _a2[d];
+      const weekend = isWeekend(year, month, d);
+      const st = code ? STATUS_MAP[code] : null;
+      return /* @__PURE__ */ React.createElement(
+        "td",
+        {
+          key: d,
+          onClick: () => setCell(w.id, d, brush),
+          style: {
+            ...styles.cell,
+            ...weekend ? styles.weekendCol : {},
+            background: st ? st.color : weekend ? styles.weekendCol.background : void 0,
+            color: st ? "#fff" : "#1e293b"
+          }
+        },
+        code || ""
+      );
+    }));
+  })))))), /* @__PURE__ */ React.createElement(Legend, null), /* @__PURE__ */ React.createElement("p", { style: styles.hint, className: "no-print" }, "Klik na ime radnika otvara kompletan pregled i omogu\u0107ava unos rekapitulacije za cijeli mjesec bez unosa dan po dan."));
+}
+function Legend() {
+  return /* @__PURE__ */ React.createElement("div", { style: styles.legend, className: "no-print" }, STATUSES.map((s) => /* @__PURE__ */ React.createElement("div", { key: s.code, style: styles.legendItem }, /* @__PURE__ */ React.createElement("span", { style: { ...styles.legendSwatch, background: s.color } }, s.code), /* @__PURE__ */ React.createElement("span", null, s.label))));
+}
+function RadniciTab({ workers, saveWorkers, groups, saveGroups, year, setYear, onSelectWorker }) {
+  const [name, setName] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [search, setSearch] = useState("");
+  const q = search.trim().toLowerCase();
+  const visibleWorkers = workers.filter((w) => !q || w.name.toLowerCase().includes(q));
+  const filterActive = q !== "";
+  function addWorker() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    saveWorkers((prev) => [...prev, { id: uid(), name: trimmed, active: true, godisnji: {}, groupId: null }]);
+    setName("");
+  }
+  function addGroup() {
+    const trimmed = groupName.trim();
+    if (!trimmed) return;
+    saveGroups((prev) => [...prev, { id: uid(), name: trimmed }]);
+    setGroupName("");
+  }
+  function renameGroup(id, value) {
+    saveGroups((prev) => prev.map((g) => g.id === id ? { ...g, name: value } : g));
+  }
+  function removeGroup(id) {
+    if (!confirm("Ukloniti grupu? Radnici ostaju, samo prelaze u 'Bez grupe'.")) return;
+    saveGroups((prev) => prev.filter((g) => g.id !== id));
+    saveWorkers((prev) => prev.map((w) => w.groupId === id ? { ...w, groupId: null } : w));
+  }
+  function setWorkerGroup(id, groupId) {
+    saveWorkers((prev) => prev.map((w) => w.id === id ? { ...w, groupId: groupId || null } : w));
+  }
+  function updateGodisnji(id, value) {
+    const days = value === "" ? "" : Math.max(0, parseInt(value, 10) || 0);
+    saveWorkers((prev) => prev.map((w) => w.id === id ? { ...w, godisnji: { ...w.godisnji, [year]: days } } : w));
+  }
+  function toggleActive(id) {
+    saveWorkers((prev) => prev.map((w) => w.id === id ? { ...w, active: w.active === false } : w));
+  }
+  function removeWorker(id) {
+    if (!confirm("Ukloniti radnika iz liste? Unosi \u0161ihte ostaju sa\u010Duvani.")) return;
+    saveWorkers((prev) => prev.filter((w) => w.id !== id));
+  }
+  return /* @__PURE__ */ React.createElement("div", { style: styles.panel }, /* @__PURE__ */ React.createElement("div", { style: styles.card }, /* @__PURE__ */ React.createElement("div", { style: styles.cardTitle }, "Grupe / sektori"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      value: groupName,
+      onChange: (e) => setGroupName(e.target.value),
+      onKeyDown: (e) => e.key === "Enter" && addGroup(),
+      placeholder: "Naziv grupe (npr. \u0160umarija Krupa, Uprava, Teren)",
+      style: styles.input
+    }
+  ), /* @__PURE__ */ React.createElement("button", { onClick: addGroup, style: styles.primaryBtn }, "Dodaj grupu")), groups.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 } }, groups.map((g) => /* @__PURE__ */ React.createElement("div", { key: g.id, style: styles.groupChip }, /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      value: g.name,
+      onChange: (e) => renameGroup(g.id, e.target.value),
+      style: styles.groupChipInput
+    }
+  ), /* @__PURE__ */ React.createElement("button", { style: styles.chipRemove, onClick: () => removeGroup(g.id) }, /* @__PURE__ */ React.createElement(IconClose, { size: 11, strokeWidth: 2.4 })))))), /* @__PURE__ */ React.createElement("div", { style: styles.toolbar }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      value: name,
+      onChange: (e) => setName(e.target.value),
+      onKeyDown: (e) => e.key === "Enter" && addWorker(),
+      placeholder: "Ime i prezime radnika",
+      style: styles.input
+    }
+  ), /* @__PURE__ */ React.createElement("button", { onClick: addWorker, style: styles.primaryBtn }, "Dodaj radnika"), /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(FilterCount, { shown: visibleWorkers.length, total: workers.length, active: filterActive })), /* @__PURE__ */ React.createElement("div", { style: styles.yearPicker }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, "Godi\u0161nji odmor za godinu:"), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year - 1) }, /* @__PURE__ */ React.createElement(IconChevronLeft, { size: 16 })), /* @__PURE__ */ React.createElement("div", { style: styles.monthLabel }, year), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year + 1) }, /* @__PURE__ */ React.createElement(IconChevronRight, { size: 16 })))), visibleWorkers.length === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: "Nema radnika koji odgovaraju pretrazi." }) : /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, textAlign: "left" } }, "Radnik"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Grupa"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Dana godi\u0161njeg (", year, ")"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Status"), /* @__PURE__ */ React.createElement("th", { style: styles.th }))), /* @__PURE__ */ React.createElement("tbody", null, visibleWorkers.map((w) => {
+    var _a, _b;
+    return /* @__PURE__ */ React.createElement("tr", { key: w.id, className: "hover-row", style: w.active === false ? { opacity: 0.5 } : void 0 }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, textAlign: "left" } }, /* @__PURE__ */ React.createElement("button", { style: styles.workerNameBtn, onClick: () => onSelectWorker(w.id) }, w.name)), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement("select", { value: w.groupId || "", onChange: (e) => setWorkerGroup(w.id, e.target.value), style: styles.select }, /* @__PURE__ */ React.createElement("option", { value: "" }, "\u2014 bez grupe \u2014"), groups.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.name)))), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "number",
+        min: 0,
+        value: (_b = (_a = w.godisnji) == null ? void 0 : _a[year]) != null ? _b : "",
+        onChange: (e) => updateGodisnji(w.id, e.target.value),
+        style: styles.smallInput,
+        placeholder: "\u2014"
+      }
+    )), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement("button", { style: styles.linkBtn, onClick: () => toggleActive(w.id) }, w.active === false ? "Aktiviraj" : "Deaktiviraj")), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement("button", { style: { ...styles.linkBtn, color: "#dc2626" }, onClick: () => removeWorker(w.id) }, "Ukloni")));
+  }))), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, 'Broj dana godi\u0161njeg odmora unosi se svake godine posebno (rje\u0161enje se izdaje obi\u010Dno u junu). Preostali dani se automatski ra\u010Dunaju u "Rekapitulaciji" na osnovu svih unesenih "G" dana kroz cijelu godinu.'));
+}
+function RekapTab({ workers, groups, year, setYear, month, setMonth, yearEntries, recapLoading, countsForWorkerMonth, yearGodisnjiUsed, onSelectWorker }) {
+  const totals = Object.fromEntries(STATUSES.map((s) => [s.code, 0]));
+  const [view, setView] = useState("tabela");
+  const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const activeTotal = workers.filter((w) => w.active !== false).length;
+  const groupedWorkers = useMemo(
+    () => computeGroupedWorkers(workers, groups, search, groupFilter),
+    [workers, groups, search, groupFilter]
+  );
+  const shownTotal = groupedWorkers.reduce((s, g) => s + g.workers.length, 0);
+  const filterActive = search.trim() !== "" || groupFilter !== "all";
+  return /* @__PURE__ */ React.createElement("div", { style: styles.panel }, /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement(MonthNav, { year, setYear, month, setMonth }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: shownTotal, total: activeTotal, active: filterActive }), /* @__PURE__ */ React.createElement("div", { style: styles.viewToggle }, /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => setView("tabela"),
+      style: { ...styles.toggleBtn, ...view === "tabela" ? styles.toggleBtnActive : {} }
+    },
+    "\u{1F4CB} Tabela"
+  ), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => setView("tekst"),
+      style: { ...styles.toggleBtn, ...view === "tekst" ? styles.toggleBtnActive : {} }
+    },
+    "\u{1F4DD} Ispis za mjesec"
+  )), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " \u0160tampaj"))), /* @__PURE__ */ React.createElement(PrintTitle, null, view === "tabela" ? "Rekapitulacija" : "Pregled rada za mjesec", " \u2014 ", MONTH_NAMES[month - 1], " ", year), recapLoading || !yearEntries ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "Ra\u010Dunanje rekapitulacije..." }) : shownTotal === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: "Nema radnika koji odgovaraju filteru." }) : view === "tekst" ? /* @__PURE__ */ React.createElement(
+    TextSummaryView,
+    {
+      groupedWorkers,
+      groups,
+      month,
+      countsForWorkerMonth,
+      yearEntries
+    }
+  ) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), STATUSES.map((s) => /* @__PURE__ */ React.createElement("th", { key: s.code, style: styles.th, title: s.label }, s.code)), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Radnih dana"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. dodijeljeno"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. iskori\u0161teno (god.)"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. preostalo"))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: 14, style: styles.groupHeader }, grp.name)), grp.workers.map((w) => {
+    var _a, _b;
+    const counts = countsForWorkerMonth(w.id, month, yearEntries);
+    STATUSES.forEach((s) => totals[s.code] += counts[s.code]);
+    const radniDani = counts.K + counts.T;
+    const allocated = (_b = (_a = w.godisnji) == null ? void 0 : _a[year]) != null ? _b : 0;
+    const usedYear = yearGodisnjiUsed(w.id);
+    const remaining = (allocated === "" ? 0 : allocated) - usedYear;
+    return /* @__PURE__ */ React.createElement("tr", { key: w.id, className: "hover-row" }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, ...styles.stickyCol, textAlign: "left" } }, /* @__PURE__ */ React.createElement("button", { style: styles.workerNameBtn, onClick: () => onSelectWorker(w.id) }, w.name)), STATUSES.map((s) => /* @__PURE__ */ React.createElement("td", { key: s.code, style: styles.td }, counts[s.code] || "")), /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, fontWeight: 600 } }, radniDani), /* @__PURE__ */ React.createElement("td", { style: styles.td }, allocated === "" ? "\u2014" : allocated), /* @__PURE__ */ React.createElement("td", { style: styles.td }, usedYear), /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, fontWeight: 600, color: remaining < 0 ? "#dc2626" : "#16a34a" } }, allocated === "" ? "\u2014" : remaining));
+  })))), /* @__PURE__ */ React.createElement("tfoot", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, ...styles.stickyCol, textAlign: "left", fontWeight: 700 } }, "UKUPNO"), STATUSES.map((s) => /* @__PURE__ */ React.createElement("td", { key: s.code, style: { ...styles.td, fontWeight: 700 } }, totals[s.code] || "")), /* @__PURE__ */ React.createElement("td", { style: styles.td, colSpan: 4 }))))), /* @__PURE__ */ React.createElement("p", { style: { ...styles.hint, display: view === "tabela" ? "block" : "none" }, className: "no-print" }, '"God. preostalo" = dodijeljeno za ', year, ". godinu minus svi dani sa oznakom G uneseni kroz cijelu ", year, ". godinu (ne samo prikazani mjesec)."));
+}
+function TextSummaryView({ groupedWorkers, groups, month, countsForWorkerMonth, yearEntries }) {
+  return /* @__PURE__ */ React.createElement("div", { style: styles.textSummaryWrap }, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement("div", { key: grp.id, style: { marginBottom: 18 } }, groups.length > 0 && /* @__PURE__ */ React.createElement("div", { style: styles.groupHeaderText }, grp.name), /* @__PURE__ */ React.createElement("ol", { style: styles.textList }, grp.workers.map((w) => {
+    const counts = countsForWorkerMonth(w.id, month, yearEntries);
+    const parts = STATUSES.filter((s) => counts[s.code] > 0).map(
+      (s) => `${counts[s.code]} ${s.short}`
+    );
+    const radniDani = counts.K + counts.T;
+    return /* @__PURE__ */ React.createElement("li", { key: w.id, style: styles.textListItem }, /* @__PURE__ */ React.createElement("span", { style: styles.textWorkerName }, w.name), " \u2014 ", parts.length > 0 ? parts.join(", ") : "nema unesenih dana", ".", radniDani > 0 && /* @__PURE__ */ React.createElement("span", { style: styles.textTotal }, " (ukupno radnih dana: ", radniDani, ")"));
+  })))));
+}
+let ocrLoadPromise = null;
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (ocrLoadPromise) return ocrLoadPromise;
+  ocrLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js";
+    script.onload = () => resolve(window.Tesseract);
+    script.onerror = () => reject(new Error("Neuspje\u0161no u\u010Ditavanje OCR biblioteke \u2014 provjeri internet konekciju."));
+    document.head.appendChild(script);
+  });
+  return ocrLoadPromise;
+}
+const NUMERIC_TOKEN_RE = /^\d+([.,]\d+)?$/;
+const LETTER_CODE_TOKEN_RE = /^(PO|NO|ND|K|T|G|Z|B|P)$/i;
+const HOURS_FULL_DAY = 8;
+function clusterWordsIntoRows(words) {
+  const valid = (words || []).filter((w) => w.text && w.text.trim() && w.bbox).map((w) => ({
+    text: w.text.trim(),
+    x: (w.bbox.x0 + w.bbox.x1) / 2,
+    y: (w.bbox.y0 + w.bbox.y1) / 2,
+    h: Math.max(1, w.bbox.y1 - w.bbox.y0)
+  }));
+  if (valid.length === 0) return [];
+  valid.sort((a, b) => a.y - b.y);
+  const heights = valid.map((w) => w.h).sort((a, b) => a - b);
+  const medianH = heights[Math.floor(heights.length / 2)] || 20;
+  const rowThreshold = medianH * 0.75;
+  const rows = [];
+  valid.forEach((w) => {
+    let row = rows.find((r) => Math.abs(r.y - w.y) < rowThreshold);
+    if (!row) {
+      row = { y: w.y, words: [] };
+      rows.push(row);
+    }
+    row.words.push(w);
+    row.y = row.words.reduce((s, x) => s + x.y, 0) / row.words.length;
+  });
+  rows.forEach((r) => r.words.sort((a, b) => a.x - b.x));
+  rows.sort((a, b) => a.y - b.y);
+  return rows;
+}
+function tokenToCode(token, hoursAsCode) {
+  if (LETTER_CODE_TOKEN_RE.test(token)) return token.toUpperCase();
+  if (NUMERIC_TOKEN_RE.test(token)) {
+    const num = parseFloat(token.replace(",", "."));
+    if (!isNaN(num) && num > 0) return hoursAsCode;
+  }
+  return null;
+}
+function rowsFromClusteredWords(clustered, hoursAsCode) {
+  return clustered.map((row, idx) => {
+    const tokens = row.words.map((w) => w.text);
+    let i = 0;
+    const nameParts = [];
+    while (i < tokens.length && !NUMERIC_TOKEN_RE.test(tokens[i]) && !LETTER_CODE_TOKEN_RE.test(tokens[i])) {
+      nameParts.push(tokens[i]);
+      i++;
+    }
+    const valueTokens = tokens.slice(i);
+    const codes = valueTokens.map((t) => tokenToCode(t, hoursAsCode)).filter(Boolean).join(" ");
+    const rawLine = nameParts.join(" ") || tokens.join(" ");
+    return { id: "r" + idx, rawLine, codes };
+  }).filter((r) => r.rawLine && r.rawLine.replace(/[^a-zA-ZčćžšđČĆŽŠĐ]/g, "").length >= 2);
+}
+function rowsFromPlainText(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length >= 3);
+  return lines.map((line, idx) => ({ id: "r" + idx, rawLine: line, codes: extractCodes(line) }));
+}
+function OcrImportModal({ workers, year, month, dayArr, setCell, onClose }) {
+  const [imageDataUrl, setImageDataUrl] = useState(null);
+  const [ocrRunning, setOcrRunning] = useState(false);
+  const [progress, setProgress] = useState("");
+  const [ocrText, setOcrText] = useState("");
+  const [ocrWords, setOcrWords] = useState(null);
+  const [hoursAsCode, setHoursAsCode] = useState("K");
+  const [error, setError] = useState("");
+  const [rows, setRows] = useState(null);
+  const [applied, setApplied] = useState(false);
+  const [appliedCount, setAppliedCount] = useState(0);
+  function handleFile(e) {
+    var _a;
+    const file = (_a = e.target.files) == null ? void 0 : _a[0];
+    if (!file) return;
+    setError("");
+    setOcrText("");
+    setOcrWords(null);
+    setRows(null);
+    setApplied(false);
+    const reader = new FileReader();
+    reader.onload = () => setImageDataUrl(reader.result);
+    reader.readAsDataURL(file);
+  }
+  async function runOcr() {
+    if (!imageDataUrl) return;
+    setOcrRunning(true);
+    setError("");
+    setRows(null);
+    setProgress("U\u010Ditavanje OCR biblioteke...");
+    try {
+      const Tesseract = await loadTesseract();
+      const { data } = await Tesseract.recognize(imageDataUrl, "hrv+eng", {
+        logger: (m) => {
+          if (m.status) setProgress(`${m.status}${m.progress ? " \u2014 " + Math.round(m.progress * 100) + "%" : ""}`);
+        }
+      });
+      setOcrText(data.text || "");
+      setOcrWords(data.words || []);
+    } catch (err) {
+      setError(err.message || "Gre\u0161ka pri prepoznavanju teksta.");
+    } finally {
+      setOcrRunning(false);
+      setProgress("");
+    }
+  }
+  function analyzeTable() {
+    const clustered = clusterWordsIntoRows(ocrWords);
+    const built = rowsFromClusteredWords(clustered, hoursAsCode).map((r) => ({
+      ...r,
+      workerId: (bestWorkerMatch(r.rawLine, workers) || {}).id || ""
+    }));
+    setRows(built);
+    setApplied(false);
+  }
+  function analyzePlainText() {
+    const built = rowsFromPlainText(ocrText).map((r) => ({
+      ...r,
+      workerId: (bestWorkerMatch(r.rawLine, workers) || {}).id || ""
+    }));
+    setRows(built);
+    setApplied(false);
+  }
+  function updateRow(id, patch) {
+    setRows((prev) => prev.map((r) => r.id === id ? { ...r, ...patch } : r));
+  }
+  function handleApplyAll() {
+    let count = 0;
+    rows.forEach((r) => {
+      if (!r.workerId) return;
+      const tokens = r.codes.trim().split(/\s+/).filter(Boolean);
+      tokens.forEach((tok, i) => {
+        const day = i + 1;
+        if (day > dayArr.length) return;
+        const code = tok.toUpperCase();
+        if (STATUS_MAP[code]) {
+          setCell(r.workerId, day, code);
+          count++;
+        }
+      });
+    });
+    setApplied(true);
+    setAppliedCount(count);
+  }
+  return /* @__PURE__ */ React.createElement("div", { style: styles.modalOverlay, onClick: onClose, className: "modal-overlay no-print" }, /* @__PURE__ */ React.createElement("div", { style: { ...styles.modalCard, maxWidth: 760 }, onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { style: styles.modalHeader }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: styles.modalTitle }, "Uvoz sa slike (OCR)"), /* @__PURE__ */ React.createElement("div", { style: styles.modalSubtitle }, "Upisuje se u ", MONTH_NAMES[month - 1], " ", year, ". \u2014 prepoznavanje se radi lokalno u browseru")), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: onClose }, /* @__PURE__ */ React.createElement(IconClose, { size: 16 }))), /* @__PURE__ */ React.createElement("div", { style: styles.recapBadge }, "Ovo je pomo\u0107 pri unosu, ne siguran automatski uvoz: prepoznavanje tabele iz slike (koja rije\u010D pripada kojem radniku/danu) je osjetljivo na kvalitet skena i rukopis. Uvijek provjeri red prije primjene."), /* @__PURE__ */ React.createElement("div", { style: styles.modalSection }, /* @__PURE__ */ React.createElement("input", { type: "file", accept: "image/*", capture: "environment", onChange: handleFile, style: { marginBottom: 10 } }), imageDataUrl && /* @__PURE__ */ React.createElement("img", { src: imageDataUrl, alt: "\u0160ihta", style: styles.ocrPreview }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: runOcr, disabled: !imageDataUrl || ocrRunning }, ocrRunning ? "Prepoznavanje u toku..." : "Pokreni prepoznavanje teksta"), progress && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#8a7f6d" } }, progress)), error && /* @__PURE__ */ React.createElement("p", { style: { color: "#a3423a", fontSize: 12, marginTop: 8 } }, error), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, "Prvo pokretanje preuzima jezi\u010Dki paket (par MB) \u2014 treba internet konekcija. Radi najbolje na jasnim, od\u0161tampanim/kucanim tabelama, fotografisanim ravno i bez sjena.")), ocrText && /* @__PURE__ */ React.createElement("div", { style: styles.modalSection }, /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Tuma\u010Denje brojeva u kolonama"), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, 'U zvani\u010Dnoj \u0161ihti brojevi u kolonama obi\u010Dno zna\u010De odra\u0111ene sate (npr. "8" = pun radni dan). Izaberi u koji status prevesti svaku \u0107eliju s brojem \u2014 slovni kodovi (G, B, Z...) prepoznaju se kao i do sada.'), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 12 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#8a7f6d" } }, "Broj sati (npr. 8h) tuma\u010Di kao:"), /* @__PURE__ */ React.createElement("select", { value: hoursAsCode, onChange: (e) => setHoursAsCode(e.target.value), style: styles.select }, STATUSES.filter((s) => s.code === "K" || s.code === "T").map((s) => /* @__PURE__ */ React.createElement("option", { key: s.code, value: s.code }, s.label))), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: analyzeTable }, "Analiziraj tabelu (redovi i kolone)")), /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Prepoznati tekst (rezerva, ako gornje ne uspije)"), /* @__PURE__ */ React.createElement("textarea", { value: ocrText, onChange: (e) => setOcrText(e.target.value), style: styles.ocrTextarea, rows: 5 }), /* @__PURE__ */ React.createElement("button", { style: { ...styles.secondaryBtn, marginTop: 10 }, onClick: analyzePlainText }, "Analiziraj kao obi\u010Dni tekst (red po radnik)")), rows && /* @__PURE__ */ React.createElement("div", { style: styles.modalSection }, /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Provjeri i primijeni (", rows.length, " redova)"), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, 'Kodovi po danima, razmakom odvojeni, redom od 1. dana (npr. "K K T T G B"). Ako se kolone nisu poklopile s pravim danima, ispravi ovdje prije primjene. "\u2014 presko\u010Di \u2014" ignori\u0161e red.'), /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, textAlign: "left" } }, "Prepoznato ime"), /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, textAlign: "left" } }, "Radnik"), /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, textAlign: "left" } }, "Kodovi po danima"))), /* @__PURE__ */ React.createElement("tbody", null, rows.map((r) => /* @__PURE__ */ React.createElement("tr", { key: r.id }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, textAlign: "left", fontSize: 11, color: "#8a7f6d", maxWidth: 160 } }, r.rawLine), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement("select", { value: r.workerId, onChange: (e) => updateRow(r.id, { workerId: e.target.value }), style: styles.select }, /* @__PURE__ */ React.createElement("option", { value: "" }, "\u2014 presko\u010Di \u2014"), workers.map((w) => /* @__PURE__ */ React.createElement("option", { key: w.id, value: w.id }, w.name)))), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      value: r.codes,
+      onChange: (e) => updateRow(r.id, { codes: e.target.value }),
+      style: { ...styles.input, minWidth: 160 }
+    }
+  ))))))), /* @__PURE__ */ React.createElement("button", { style: { ...styles.primaryBtn, marginTop: 12 }, onClick: handleApplyAll }, "Primijeni u tabelu"), applied && /* @__PURE__ */ React.createElement("p", { style: { fontSize: 12, color: "#3f7d5c", marginTop: 8, fontWeight: 600 } }, "Upisano ", appliedCount, ' dnevnih unosa u "Unos \u0161ihte" za ', MONTH_NAMES[month - 1], " ", year, "."))));
+}
+function GodisnjiTab({ workers, saveWorkers, groups, year, setYear, yearEntries, recapLoading, yearGodisnjiUsed, onSelectWorker }) {
+  const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const activeTotal = workers.filter((w) => w.active !== false).length;
+  const groupedWorkers = useMemo(
+    () => computeGroupedWorkers(workers, groups, search, groupFilter),
+    [workers, groups, search, groupFilter]
+  );
+  const shownTotal = groupedWorkers.reduce((s, g) => s + g.workers.length, 0);
+  const filterActive = search.trim() !== "" || groupFilter !== "all";
+  function updateGodisnji(id, value) {
+    const days = value === "" ? "" : Math.max(0, parseInt(value, 10) || 0);
+    saveWorkers((prev) => prev.map((w) => w.id === id ? { ...w, godisnji: { ...w.godisnji, [year]: days } } : w));
+  }
+  return /* @__PURE__ */ React.createElement("div", { style: styles.panel }, /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.yearPicker }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, "Godina:"), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year - 1) }, /* @__PURE__ */ React.createElement(IconChevronLeft, { size: 16 })), /* @__PURE__ */ React.createElement("div", { style: styles.monthLabel }, year), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year + 1) }, /* @__PURE__ */ React.createElement(IconChevronRight, { size: 16 }))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: shownTotal, total: activeTotal, active: filterActive }), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " \u0160tampaj"))), /* @__PURE__ */ React.createElement(PrintTitle, null, "Pregled godi\u0161njih odmora \u2014 ", year, "."), recapLoading || !yearEntries ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "Ra\u010Dunanje..." }) : shownTotal === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: "Nema radnika koji odgovaraju filteru." }) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Dodijeljeno (", year, ")"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Iskori\u0161teno"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Preostalo"))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: 4, style: styles.groupHeader }, grp.name)), grp.workers.map((w) => {
+    var _a, _b;
+    const allocated = (_b = (_a = w.godisnji) == null ? void 0 : _a[year]) != null ? _b : "";
+    const used = yearGodisnjiUsed(w.id);
+    const remaining = allocated === "" ? null : allocated - used;
+    return /* @__PURE__ */ React.createElement("tr", { key: w.id, className: "hover-row" }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, ...styles.stickyCol, textAlign: "left" } }, /* @__PURE__ */ React.createElement("button", { style: styles.workerNameBtn, onClick: () => onSelectWorker(w.id) }, w.name)), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "number",
+        min: 0,
+        value: allocated,
+        onChange: (e) => updateGodisnji(w.id, e.target.value),
+        style: styles.smallInput,
+        placeholder: "\u2014",
+        className: "no-print"
+      }
+    ), /* @__PURE__ */ React.createElement("span", { className: "print-only-inline" }, allocated === "" ? "\u2014" : allocated)), /* @__PURE__ */ React.createElement("td", { style: styles.td }, used), /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, fontWeight: 700, color: remaining !== null && remaining < 0 ? "#a3423a" : "#3f7d5c" } }, remaining === null ? "\u2014" : remaining));
+  })))))), /* @__PURE__ */ React.createElement("p", { style: styles.hint, className: "no-print" }, 'Broj dodijeljenih dana unosi se ovdje (obi\u010Dno nakon rje\u0161enja o godi\u0161njem odmoru u junu). "Preostalo" = dodijeljeno za ', year, ". godinu minus svi dani sa oznakom G uneseni kroz cijelu ", year, ". godinu."));
+}
+function BackupModal({ onClose }) {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const [importFile, setImportFile] = useState(null);
+  const [lastBackupAt, setLastBackupAt] = useState(null);
+  useEffect(() => {
+    (async () => setLastBackupAt(await storageGet("lastBackupAt", null)))();
+  }, []);
+  async function handleExport() {
+    setBusy(true);
+    setError("");
+    setStatus("");
+    try {
+      const payload = await exportAllData();
+      const stamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      triggerJsonDownload(`sihta-backup-${stamp}.json`, payload);
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      await storageSet("lastBackupAt", now);
+      setLastBackupAt(now);
+      setStatus("Backup fajl je preuzet.");
+    } catch (e) {
+      setError(e.message || "Gre\u0161ka pri izvozu.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function handleFileChange(e) {
+    var _a;
+    setImportFile(((_a = e.target.files) == null ? void 0 : _a[0]) || null);
+    setStatus("");
+    setError("");
+  }
+  function handleImport() {
+    if (!importFile) return;
+    if (!confirm("Ovo prepisuje trenutne podatke u aplikaciji podacima iz backup fajla. Nastaviti?")) return;
+    setBusy(true);
+    setError("");
+    setStatus("");
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        const count = await importAllData(parsed);
+        setStatus(`Uvezeno ${count} zapisa. Stranica se ponovo u\u010Ditava...`);
+        setTimeout(() => window.location.reload(), 1200);
+      } catch (e) {
+        setError(e.message || "Gre\u0161ka pri uvozu.");
+        setBusy(false);
+      }
+    };
+    reader.onerror = () => {
+      setError("Gre\u0161ka pri \u010Ditanju fajla.");
+      setBusy(false);
+    };
+    reader.readAsText(importFile);
+  }
+  return /* @__PURE__ */ React.createElement("div", { style: styles.modalOverlay, onClick: onClose, className: "modal-overlay no-print" }, /* @__PURE__ */ React.createElement("div", { style: { ...styles.modalCard, maxWidth: 520 }, onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { style: styles.modalHeader }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: styles.modalTitle }, "Sigurnosna kopija podataka"), /* @__PURE__ */ React.createElement("div", { style: styles.modalSubtitle }, "Izvoz i uvoz svih radnika, grupa i unesene \u0161ihte")), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: onClose }, /* @__PURE__ */ React.createElement(IconClose, { size: 16 }))), /* @__PURE__ */ React.createElement("div", { style: styles.modalSection }, /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Izvoz"), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, "Sprema sve podatke (radnici, grupe, \u0161ihta za sve mjesece i godine) u jedan .json fajl na tvom ra\u010Dunaru. Uradi ovo prije nego \u0161to otvori\u0161 novu verziju aplikacije, ili povremeno kao rezervu."), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: handleExport, disabled: busy }, "\u2B07 Preuzmi backup (.json)"), lastBackupAt && /* @__PURE__ */ React.createElement("p", { style: { fontSize: 11, color: "#8a7f6d", marginTop: 8 } }, "Zadnji backup: ", new Date(lastBackupAt).toLocaleString("bs-BA"))), /* @__PURE__ */ React.createElement("div", { style: styles.modalSection }, /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Uvoz"), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, "U\u010Ditava prethodno preuzet backup fajl. ", /* @__PURE__ */ React.createElement("strong", null, "Prepisuje"), " trenutne podatke u aplikaciji \u2014 koristi ovo nakon otvaranja nove verzije, ili na drugom ra\u010Dunaru da prebaci\u0161 postoje\u0107e podatke."), /* @__PURE__ */ React.createElement("input", { type: "file", accept: ".json,application/json", onChange: handleFileChange, style: { marginBottom: 10 } }), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: handleImport, disabled: !importFile || busy }, "\u2B06 Uvezi backup")), status && /* @__PURE__ */ React.createElement("p", { style: { fontSize: 12, color: "#3f7d5c", marginTop: 8, fontWeight: 600 } }, status), error && /* @__PURE__ */ React.createElement("p", { style: { fontSize: 12, color: "#a3423a", marginTop: 8 } }, error))));
+}
+function EmptyState({ text }) {
+  return /* @__PURE__ */ React.createElement("div", { style: styles.empty }, /* @__PURE__ */ React.createElement(IconUsers, { style: { color: "#d8cfb8", marginBottom: 10 } }), /* @__PURE__ */ React.createElement("div", null, text));
+}
+function WorkerDetailModal({ worker, groups, year, month, entries, setWorkerRecap, clearWorkerRecap, yearGodisnjiUsed, onClose }) {
+  var _a, _b, _c;
+  const existingRecap = (_a = entries[worker.id]) == null ? void 0 : _a.__recap;
+  const [mode, setMode] = useState(existingRecap ? "recap" : "daily");
+  const [draft, setDraft] = useState(() => {
+    if (existingRecap) return { ...existingRecap };
+    const dailyMap = entries[worker.id] || {};
+    const counts = Object.fromEntries(STATUSES.map((s) => [s.code, 0]));
+    Object.values(dailyMap).forEach((code) => {
+      if (counts[code] !== void 0) counts[code]++;
+    });
+    return counts;
+  });
+  const [yearHistory, setYearHistory] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = {};
+      for (let m = 1; m <= 12; m++) {
+        const e = await storageGet(`entries:${year}-${pad(m)}`, {});
+        const monthEntries = e[worker.id];
+        const counts = Object.fromEntries(STATUSES.map((s) => [s.code, 0]));
+        if (monthEntries) {
+          if (monthEntries.__recap) STATUSES.forEach((s) => counts[s.code] = monthEntries.__recap[s.code] || 0);
+          else Object.values(monthEntries).forEach((code) => {
+            if (counts[code] !== void 0) counts[code]++;
+          });
+        }
+        result[m] = counts;
+      }
+      if (!cancelled) setYearHistory(result);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [worker.id, year]);
+  const group = groups.find((g) => g.id === worker.groupId);
+  const allocated = (_c = (_b = worker.godisnji) == null ? void 0 : _b[year]) != null ? _c : "";
+  const usedYear = yearGodisnjiUsed(worker.id);
+  const remaining = allocated === "" ? null : allocated - usedYear;
+  function saveRecap() {
+    setWorkerRecap(worker.id, draft);
+  }
+  function switchToDaily() {
+    if (existingRecap && !confirm("Prelazak na 'Dan po dan' bri\u0161e unesenu mjese\u010Dnu rekapitulaciju za ovaj mjesec. Nastaviti?")) return;
+    clearWorkerRecap(worker.id);
+    setMode("daily");
+  }
+  function printWorkerCard() {
+    document.body.classList.add("printing-worker");
+    const cleanup = () => {
+      document.body.classList.remove("printing-worker");
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+  }
+  return /* @__PURE__ */ React.createElement("div", { style: styles.modalOverlay, onClick: onClose, className: "modal-overlay" }, /* @__PURE__ */ React.createElement("div", { style: styles.modalCard, className: "modal-card", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { style: styles.modalHeader }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: styles.modalTitle }, worker.name), group && /* @__PURE__ */ React.createElement("div", { style: styles.modalSubtitle }, group.name)), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6 } }, /* @__PURE__ */ React.createElement("button", { className: "no-print", style: styles.iconBtn, title: "\u0160tampaj karton radnika", onClick: printWorkerCard }, /* @__PURE__ */ React.createElement(IconPrint, { size: 16 })), /* @__PURE__ */ React.createElement("button", { className: "no-print", style: styles.iconBtn, onClick: onClose }, /* @__PURE__ */ React.createElement(IconClose, { size: 16 })))), /* @__PURE__ */ React.createElement(PrintTitle, null, worker.name, " \u2014 karton za ", year, ". godinu ", group ? `(${group.name})` : ""), /* @__PURE__ */ React.createElement("div", { style: styles.modalStatsRow }, /* @__PURE__ */ React.createElement("div", { style: styles.statBox }, /* @__PURE__ */ React.createElement("div", { style: styles.statLabel }, "Godi\u0161nji ", year, "."), /* @__PURE__ */ React.createElement("div", { style: styles.statValue }, allocated === "" ? "\u2014" : allocated)), /* @__PURE__ */ React.createElement("div", { style: styles.statBox }, /* @__PURE__ */ React.createElement("div", { style: styles.statLabel }, "Iskori\u0161teno"), /* @__PURE__ */ React.createElement("div", { style: styles.statValue }, usedYear)), /* @__PURE__ */ React.createElement("div", { style: styles.statBox }, /* @__PURE__ */ React.createElement("div", { style: styles.statLabel }, "Preostalo"), /* @__PURE__ */ React.createElement("div", { style: { ...styles.statValue, color: remaining !== null && remaining < 0 ? "#a3423a" : "#3f7d5c" } }, remaining === null ? "\u2014" : remaining))), /* @__PURE__ */ React.createElement("div", { style: styles.modalSection, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Unos za ", MONTH_NAMES[month - 1], " ", year, "."), /* @__PURE__ */ React.createElement("div", { style: styles.viewToggle }, /* @__PURE__ */ React.createElement("button", { onClick: switchToDaily, style: { ...styles.toggleBtn, ...mode === "daily" ? styles.toggleBtnActive : {} } }, "Dan po dan"), /* @__PURE__ */ React.createElement("button", { onClick: () => setMode("recap"), style: { ...styles.toggleBtn, ...mode === "recap" ? styles.toggleBtnActive : {} } }, "Rekapitulacija za mjesec")), mode === "daily" ? /* @__PURE__ */ React.createElement("p", { style: styles.hint }, 'Unos se radi klikom na dane u glavnoj tabeli, u tabu "Unos \u0161ihte".') : /* @__PURE__ */ React.createElement(React.Fragment, null, existingRecap ? /* @__PURE__ */ React.createElement("div", { style: styles.recapBadge }, "Ura\u0111ena samo rekapitulacija \u2014 bez unosa po danima") : /* @__PURE__ */ React.createElement("p", { style: styles.hint }, "Unesi ukupan broj dana po statusu za cijeli mjesec, bez klikanja dan po dan. Nakon spremanja, ovaj mjesec za ovog radnika prikazuje se kao rekapitulacija u glavnoj tabeli."), /* @__PURE__ */ React.createElement("div", { style: styles.recapGrid }, STATUSES.map((s) => /* @__PURE__ */ React.createElement("label", { key: s.code, style: styles.recapField }, /* @__PURE__ */ React.createElement("span", { style: { ...styles.recapFieldLabel, color: s.color } }, s.label), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      type: "number",
+      min: 0,
+      value: draft[s.code] || "",
+      onChange: (e) => setDraft((d) => ({ ...d, [s.code]: Math.max(0, parseInt(e.target.value, 10) || 0) })),
+      style: styles.smallInput
+    }
+  )))), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: saveRecap }, "Sa\u010Duvaj rekapitulaciju"))), /* @__PURE__ */ React.createElement("div", { style: styles.modalSection }, /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Pregled po mjesecima (", year, ".)"), !yearHistory ? /* @__PURE__ */ React.createElement("p", { style: styles.hint }, "U\u010Ditavanje...") : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, textAlign: "left" } }, "Mjesec"), STATUSES.map((s) => /* @__PURE__ */ React.createElement("th", { key: s.code, style: styles.th, title: s.label }, s.code)))), /* @__PURE__ */ React.createElement("tbody", null, MONTH_NAMES.map((mn, idx) => {
+    const m = idx + 1;
+    const c = yearHistory[m];
+    return /* @__PURE__ */ React.createElement("tr", { key: m, style: m === month ? { background: "#f3ead2" } : void 0 }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, textAlign: "left" } }, mn), STATUSES.map((s) => /* @__PURE__ */ React.createElement("td", { key: s.code, style: styles.td }, c[s.code] || "")));
+  })))))));
+}
+const INK = "#26332c";
+const FOREST = "#1f4d3d";
+const FOREST_DARK = "#16352a";
+const GOLD = "#b8862f";
+const PAPER = "#faf7f0";
+const GLOBAL_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
+  * { box-sizing: border-box; }
+  ::selection { background: ${GOLD}; color: #fff; }
+
+  body {
+    background-color: ${PAPER};
+    background-image: radial-gradient(${GOLD}14 0.6px, transparent 0.6px);
+    background-size: 22px 22px;
+  }
+
+  button { transition: filter 0.15s ease, transform 0.08s ease, box-shadow 0.15s ease; cursor: pointer; }
+  button:hover:not(:disabled) { filter: brightness(1.08); }
+  button:active:not(:disabled) { transform: scale(0.96); }
+  button:disabled { opacity: 0.55; cursor: not-allowed; filter: none; }
+
+  input, select, textarea { transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+  input:focus, select:focus, textarea:focus {
+    outline: none; border-color: ${GOLD} !important;
+    box-shadow: 0 0 0 3px ${GOLD}2e;
+  }
+
+  .hover-row:hover td { background: ${GOLD}0f; }
+
+  .spin { animation: spin 0.85s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .modal-overlay { animation: fadeIn 0.15s ease; }
+  .modal-card { animation: modalIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1); }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes modalIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+  .print-only-inline { display: none; }
+  @media print {
+    .no-print { display: none !important; }
+    .print-only-inline { display: inline !important; font-weight: 600; }
+    .print-title { display: block !important; font-family: 'Fraunces', serif; font-size: 18px; font-weight: 600; margin-bottom: 12px; color: ${INK}; }
+    body { background: #fff; background-image: none; }
+    .modal-overlay { display: none !important; animation: none !important; }
+    body.printing-worker .app-shell { display: none !important; }
+    body.printing-worker .modal-overlay {
+      display: block !important; position: static !important; background: #fff !important;
+      padding: 0 !important; overflow: visible !important; animation: none !important;
+    }
+    body.printing-worker .modal-card { box-shadow: none !important; max-width: 100% !important; border-radius: 0 !important; animation: none !important; }
+  }
+`;
+const styles = {
+  app: { fontFamily: "'Inter','Segoe UI',system-ui,sans-serif", background: PAPER, minHeight: "100%", color: INK, padding: "0 0 40px" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16, padding: "18px 28px", borderBottom: `2px solid ${GOLD}`, background: "#fff" },
+  brandRow: { display: "flex", alignItems: "center", gap: 12 },
+  monogram: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    background: FOREST,
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontFamily: "'Fraunces', Georgia, serif",
+    fontSize: 20,
+    fontWeight: 600,
+    flexShrink: 0
+  },
+  title: { fontFamily: "'Fraunces', Georgia, serif", fontSize: 23, fontWeight: 600, letterSpacing: "-0.01em", color: FOREST_DARK, lineHeight: 1.15 },
+  companyName: { fontSize: 11, fontWeight: 700, color: GOLD, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 },
+  printCompanyLine: { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#8a7f6d", marginBottom: 4 },
+  subtitle: { fontSize: 11, color: "#8a7f6d", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 },
+  nav: { display: "flex", gap: 22 },
+  navBtn: {
+    border: "none",
+    borderBottom: "2px solid transparent",
+    background: "none",
+    color: "#8a7f6d",
+    padding: "6px 2px",
+    fontSize: 12.5,
+    fontWeight: 600,
+    cursor: "pointer",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em"
+  },
+  navBtnActive: { color: FOREST_DARK, borderBottom: `2px solid ${GOLD}` },
+  backupBtn: { border: `1px solid #e8e0cf`, background: "#fff", color: "#8a7f6d", padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", marginLeft: 10 },
+  panel: { padding: "24px 28px" },
+  card: { border: "1px solid #e8e0cf", borderRadius: 10, padding: 16, marginBottom: 20, background: "#fff", boxShadow: "0 1px 2px rgba(38,51,44,0.04)" },
+  cardTitle: { fontFamily: "'Fraunces', Georgia, serif", fontSize: 15, fontWeight: 600, marginBottom: 12, color: FOREST_DARK },
+  toolbar: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 },
+  monthNav: { display: "flex", alignItems: "center", gap: 10 },
+  monthLabel: { fontFamily: "'Fraunces', Georgia, serif", fontSize: 16, fontWeight: 600, minWidth: 140, textAlign: "center", color: FOREST_DARK },
+  iconBtn: { border: "1px solid #e8e0cf", background: "#fff", width: 30, height: 30, borderRadius: 6, cursor: "pointer", fontSize: 16, color: FOREST },
+  brushRow: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  brushBtn: { border: "1.5px solid", borderRadius: 6, padding: "5px 9px", fontSize: 12, fontWeight: 700, cursor: "pointer", minWidth: 30 },
+  tableScroll: { overflowX: "auto", border: "1px solid #e8e0cf", borderRadius: 10, background: "#fff", boxShadow: "0 1px 2px rgba(38,51,44,0.04)" },
+  table: { borderCollapse: "collapse", width: "100%", fontSize: 12, background: "#fff" },
+  th: { padding: "9px 6px", background: FOREST, color: "#f2ede1", fontWeight: 600, borderBottom: `2px solid ${GOLD}`, whiteSpace: "nowrap" },
+  weekendHeader: { background: FOREST_DARK },
+  td: { padding: "7px 6px", textAlign: "center", borderBottom: "1px solid #f1ece0", whiteSpace: "nowrap" },
+  cell: { padding: "6px 0", textAlign: "center", borderBottom: "1px solid #f1ece0", borderLeft: "1px solid #faf7f0", cursor: "pointer", fontWeight: 700, userSelect: "none" },
+  stickyCol: { position: "sticky", left: 0, background: "#fff", zIndex: 1, boxShadow: "1px 0 0 #e8e0cf", minWidth: 150 },
+  weekendCol: { background: "#eee7d6" },
+  groupHeader: { textAlign: "left", background: "#f3ead2", color: FOREST_DARK, fontWeight: 700, padding: "7px 10px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #e8e0cf", borderTop: "1px solid #e8e0cf" },
+  legend: { display: "flex", flexWrap: "wrap", gap: 16, marginTop: 16, fontSize: 12, color: "#5c5646" },
+  legendItem: { display: "flex", alignItems: "center", gap: 7 },
+  legendSwatch: { width: 18, height: 18, borderRadius: 4, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, fontWeight: 700 },
+  input: { border: "1px solid #e8e0cf", borderRadius: 8, padding: "8px 12px", fontSize: 13, minWidth: 200, background: "#fff" },
+  select: { border: "1px solid #e8e0cf", borderRadius: 8, padding: "7px 10px", fontSize: 13, background: "#fff" },
+  smallInput: { border: "1px solid #e8e0cf", borderRadius: 6, padding: "4px 8px", fontSize: 13, width: 60, textAlign: "center" },
+  primaryBtn: { background: FOREST, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  secondaryBtn: { background: "#fff", color: FOREST, border: `1px solid ${FOREST}`, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  ocrPreview: { maxWidth: "100%", maxHeight: 280, borderRadius: 8, border: "1px solid #e8e0cf", display: "block", marginTop: 8 },
+  ocrTextarea: { width: "100%", border: "1px solid #e8e0cf", borderRadius: 8, padding: 10, fontSize: 12, fontFamily: "monospace", resize: "vertical" },
+  linkBtn: { background: "none", border: "none", color: FOREST, fontSize: 12, cursor: "pointer", textDecoration: "underline" },
+  yearPicker: { display: "flex", alignItems: "center", gap: 8 },
+  hint: { fontSize: 12, color: "#9c927c", marginTop: 14, lineHeight: 1.5, fontStyle: "italic" },
+  empty: { padding: 48, textAlign: "center", color: "#9c927c", border: "1px dashed #e8e0cf", borderRadius: 10, fontSize: 13, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center" },
+  groupChip: { display: "flex", alignItems: "center", gap: 4, border: "1px solid #e8e0cf", borderRadius: 20, padding: "2px 4px 2px 10px", background: PAPER },
+  groupChipInput: { border: "none", background: "transparent", fontSize: 12, width: 110, fontWeight: 500, color: INK },
+  chipRemove: { border: "none", background: "#e8e0cf", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", fontSize: 12, lineHeight: "18px", padding: 0, color: INK },
+  viewToggle: { display: "flex", border: "1px solid #e8e0cf", borderRadius: 8, overflow: "hidden" },
+  toggleBtn: { border: "none", background: "#fff", color: "#8a7f6d", padding: "8px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" },
+  toggleBtnActive: { background: FOREST, color: "#fff" },
+  textSummaryWrap: { background: "#fff", border: "1px solid #e8e0cf", borderRadius: 10, padding: "20px 24px", boxShadow: "0 1px 2px rgba(38,51,44,0.04)" },
+  groupHeaderText: { fontFamily: "'Fraunces', Georgia, serif", fontSize: 14, fontWeight: 600, color: FOREST_DARK, borderBottom: `1px solid ${GOLD}`, paddingBottom: 6, marginBottom: 10 },
+  textList: { margin: 0, paddingLeft: 20 },
+  textListItem: { fontSize: 13, lineHeight: 1.9, color: INK },
+  textWorkerName: { fontWeight: 600, color: FOREST_DARK },
+  textTotal: { color: "#8a7f6d", fontStyle: "italic" },
+  workerNameBtn: { border: "none", background: "none", padding: 0, fontSize: 12, fontWeight: 600, color: FOREST_DARK, cursor: "pointer", textAlign: "left", textDecoration: "underline", textDecorationColor: "#e8e0cf", textUnderlineOffset: 3 },
+  recapRow: { padding: "8px 10px", textAlign: "left", background: "#f3ead2", color: FOREST_DARK, fontSize: 12, borderBottom: "1px solid #e8e0cf" },
+  recapRowBadge: { background: GOLD, color: "#fff", fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, marginRight: 8, letterSpacing: "0.04em" },
+  recapEditBtn: { marginLeft: 10, border: "none", background: "none", color: FOREST, fontSize: 12, fontWeight: 600, cursor: "pointer", textDecoration: "underline" },
+  modalOverlay: { position: "fixed", inset: 0, background: "rgba(22,53,42,0.45)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", zIndex: 50, overflowY: "auto" },
+  modalCard: { background: PAPER, borderRadius: 14, padding: "22px 26px", width: "100%", maxWidth: 620, boxShadow: "0 12px 40px rgba(22,53,42,0.25)" },
+  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 },
+  modalTitle: { fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 600, color: FOREST_DARK },
+  modalSubtitle: { fontSize: 12, color: "#8a7f6d", marginTop: 2 },
+  modalStatsRow: { display: "flex", gap: 10, marginBottom: 20 },
+  statBox: { flex: 1, background: "#fff", border: "1px solid #e8e0cf", borderRadius: 10, padding: "10px 12px", textAlign: "center" },
+  statLabel: { fontSize: 10, color: "#8a7f6d", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 },
+  statValue: { fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 600, color: FOREST_DARK },
+  modalSection: { background: "#fff", border: "1px solid #e8e0cf", borderRadius: 10, padding: 16, marginBottom: 14 },
+  modalSectionTitle: { fontFamily: "'Fraunces', Georgia, serif", fontSize: 14, fontWeight: 600, color: FOREST_DARK, marginBottom: 12 },
+  recapBadge: { background: "#f3ead2", color: FOREST_DARK, fontSize: 11, fontWeight: 700, padding: "6px 10px", borderRadius: 6, marginBottom: 12, display: "inline-block", letterSpacing: "0.02em" },
+  recapGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 },
+  recapField: { display: "flex", flexDirection: "column", gap: 4 },
+  recapFieldLabel: { fontSize: 11, fontWeight: 600 },
+  searchWrap: { position: "relative", display: "inline-flex", alignItems: "center" },
+  searchClearBtn: { position: "absolute", right: 6, border: "none", background: "#e8e0cf", color: INK, borderRadius: "50%", width: 18, height: 18, fontSize: 12, lineHeight: "18px", cursor: "pointer", padding: 0 },
+  filterCount: { fontSize: 11, color: GOLD, fontWeight: 600, whiteSpace: "nowrap" }
+};
+ReactDOM.createRoot(document.getElementById("root")).render(/* @__PURE__ */ React.createElement(App, null));
+
+</script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch((e) => console.error("SW greška:", e));
+    });
+  }
+</script>
+</body>
+</html>
