@@ -48,7 +48,7 @@ const MONTH_NAMES = [
 ];
 const NO_GROUP = "__bez_grupe__";
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
-const APP_VERSION = "v1.2.2";
+const APP_VERSION = "v1.2.3";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -1486,9 +1486,10 @@ function WorkerDetailModal({ worker, groups, year, month, entries, setWorkerReca
   }, [worker.id, worker.leaveAnnualDays, worker.leaveStartDate, year, entries]);
   const legacyAllocated = (_c = (_b = worker.godisnji) == null ? void 0 : _b[year]) != null ? _c : "";
   const legacyUsedYear = yearGodisnjiUsed(worker.id);
-  const allocated = cumulativeConfigured ? leaveBalance ? leaveBalance.allocated : "" : legacyAllocated;
+  const flatAllocated = hasAnnualDays(worker) ? worker.leaveAnnualDays : legacyAllocated;
+  const allocated = cumulativeConfigured ? leaveBalance ? leaveBalance.allocated : "" : flatAllocated;
   const usedYear = cumulativeConfigured ? leaveBalance ? leaveBalance.used : 0 : legacyUsedYear;
-  const remaining = cumulativeConfigured ? leaveBalance ? leaveBalance.remaining : null : legacyAllocated === "" ? null : legacyAllocated - legacyUsedYear;
+  const remaining = cumulativeConfigured ? leaveBalance ? leaveBalance.remaining : null : flatAllocated === "" ? null : flatAllocated - legacyUsedYear;
   function updateLeaveSettings(patch) {
     saveWorkers((prev) => prev.map((w) => w.id === worker.id ? { ...w, ...patch } : w));
   }
