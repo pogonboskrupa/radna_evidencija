@@ -48,6 +48,7 @@ const MONTH_NAMES = [
 ];
 const NO_GROUP = "__bez_grupe__";
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
+const APP_VERSION = "v1.1.0";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -407,7 +408,7 @@ function App() {
     if (!monthEntries || monthEntries.__recap) return null;
     return monthEntries[today.getDate()] === "B";
   }
-  return /* @__PURE__ */ React.createElement("div", { style: styles.app }, /* @__PURE__ */ React.createElement("style", null, GLOBAL_CSS), /* @__PURE__ */ React.createElement("div", { className: "app-shell" }, /* @__PURE__ */ React.createElement("header", { style: { ...styles.header }, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.brandRow }, /* @__PURE__ */ React.createElement("div", { style: styles.monogram }, "\u0160"), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: styles.companyName }, COMPANY_NAME), /* @__PURE__ */ React.createElement("div", { style: styles.title }, "\u0160ihta"), /* @__PURE__ */ React.createElement("div", { style: styles.subtitle }, "Evidencija radnog vremena"))), /* @__PURE__ */ React.createElement("nav", { style: styles.nav }, [
+  return /* @__PURE__ */ React.createElement("div", { style: styles.app }, /* @__PURE__ */ React.createElement("style", null, GLOBAL_CSS), /* @__PURE__ */ React.createElement("div", { className: "app-shell" }, /* @__PURE__ */ React.createElement("header", { style: { ...styles.header }, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.brandRow }, /* @__PURE__ */ React.createElement("div", { style: styles.monogram }, "\u0160"), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: styles.companyName }, COMPANY_NAME), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "baseline", gap: 8 } }, /* @__PURE__ */ React.createElement("div", { style: styles.title }, "\u0160ihta"), /* @__PURE__ */ React.createElement("span", { style: styles.versionBadge, className: "no-print" }, APP_VERSION)), /* @__PURE__ */ React.createElement("div", { style: styles.subtitle }, "Evidencija radnog vremena"))), /* @__PURE__ */ React.createElement("nav", { style: styles.nav }, [
     ["unos", "Unos \u0161ihte"],
     ["radnici", "Radnici i grupe"],
     ["rekap", "Rekapitulacija"],
@@ -732,6 +733,19 @@ function RekapTab({ workers, groups, year, setYear, month, setMonth, yearEntries
   );
   const shownTotal = groupedWorkers.reduce((s, g) => s + g.workers.length, 0);
   const filterActive = search.trim() !== "" || groupFilter !== "all";
+  const [cumulativeMap, setCumulativeMap] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        workers.filter(hasLeaveConfig).map(async (w) => [w.id, await computeWorkerLeaveBalance(w, year)])
+      );
+      if (!cancelled) setCumulativeMap(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workers, year, yearEntries]);
   return /* @__PURE__ */ React.createElement("div", { style: styles.panel }, /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement(MonthNav, { year, setYear, month, setMonth }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: shownTotal, total: activeTotal, active: filterActive }), /* @__PURE__ */ React.createElement("div", { style: styles.viewToggle }, /* @__PURE__ */ React.createElement(
     "button",
     {
@@ -760,10 +774,12 @@ function RekapTab({ workers, groups, year, setYear, month, setMonth, yearEntries
     const counts = countsForWorkerMonth(w.id, month, yearEntries);
     STATUSES.forEach((s) => totals[s.code] += counts[s.code]);
     const radniDani = counts.K + counts.T;
-    const allocated = (_b = (_a = w.godisnji) == null ? void 0 : _a[year]) != null ? _b : 0;
-    const usedYear = yearGodisnjiUsed(w.id);
-    const remaining = (allocated === "" ? 0 : allocated) - usedYear;
-    return /* @__PURE__ */ React.createElement("tr", { key: w.id, className: "hover-row" }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, ...styles.stickyCol, textAlign: "left" } }, /* @__PURE__ */ React.createElement("button", { style: styles.workerNameBtn, onClick: () => onSelectWorker(w.id) }, w.name)), STATUSES.map((s) => /* @__PURE__ */ React.createElement("td", { key: s.code, style: styles.td }, counts[s.code] || "")), /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, fontWeight: 600 } }, radniDani), /* @__PURE__ */ React.createElement("td", { style: styles.td }, allocated === "" ? "\u2014" : allocated), /* @__PURE__ */ React.createElement("td", { style: styles.td }, usedYear), /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, fontWeight: 600, color: remaining < 0 ? "#dc2626" : "#16a34a" } }, allocated === "" ? "\u2014" : remaining));
+    const isCumulative = hasLeaveConfig(w);
+    const cumulative = cumulativeMap[w.id];
+    const allocated = isCumulative ? cumulative ? cumulative.allocated : "" : (_b = (_a = w.godisnji) == null ? void 0 : _a[year]) != null ? _b : "";
+    const usedYear = isCumulative ? cumulative ? cumulative.used : 0 : yearGodisnjiUsed(w.id);
+    const remaining = isCumulative ? cumulative ? cumulative.remaining : null : allocated === "" ? null : allocated - usedYear;
+    return /* @__PURE__ */ React.createElement("tr", { key: w.id, className: "hover-row" }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, ...styles.stickyCol, textAlign: "left" } }, /* @__PURE__ */ React.createElement("button", { style: styles.workerNameBtn, onClick: () => onSelectWorker(w.id) }, w.name)), STATUSES.map((s) => /* @__PURE__ */ React.createElement("td", { key: s.code, style: styles.td }, counts[s.code] || "")), /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, fontWeight: 600 } }, radniDani), /* @__PURE__ */ React.createElement("td", { style: styles.td }, allocated === "" ? "\u2014" : allocated), /* @__PURE__ */ React.createElement("td", { style: styles.td }, usedYear), /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, fontWeight: 600, color: remaining !== null && remaining < 0 ? "#dc2626" : "#16a34a" } }, remaining === null ? "\u2014" : remaining));
   })))), /* @__PURE__ */ React.createElement("tfoot", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, ...styles.stickyCol, textAlign: "left", fontWeight: 700 } }, "UKUPNO"), STATUSES.map((s) => /* @__PURE__ */ React.createElement("td", { key: s.code, style: { ...styles.td, fontWeight: 700 } }, totals[s.code] || "")), /* @__PURE__ */ React.createElement("td", { style: styles.td, colSpan: 4 }))))), /* @__PURE__ */ React.createElement("p", { style: { ...styles.hint, display: view === "tabela" ? "block" : "none" }, className: "no-print" }, '"God. preostalo" = dodijeljeno za ', year, ". godinu minus svi dani sa oznakom G uneseni kroz cijelu ", year, ". godinu (ne samo prikazani mjesec)."));
 }
 function TextSummaryView({ groupedWorkers, groups, month, countsForWorkerMonth, yearEntries }) {
@@ -963,7 +979,7 @@ function GodisnjiTab({ workers, saveWorkers, groups, year, setYear, yearEntries,
     return () => {
       cancelled = true;
     };
-  }, [workers, year]);
+  }, [workers, year, yearEntries]);
   return /* @__PURE__ */ React.createElement("div", { style: styles.panel }, /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.yearPicker }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, "Godina:"), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year - 1) }, /* @__PURE__ */ React.createElement(IconChevronLeft, { size: 16 })), /* @__PURE__ */ React.createElement("div", { style: styles.monthLabel }, year), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year + 1) }, /* @__PURE__ */ React.createElement(IconChevronRight, { size: 16 }))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: shownTotal, total: activeTotal, active: filterActive }), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " \u0160tampaj"))), /* @__PURE__ */ React.createElement(PrintTitle, null, "Pregled godi\u0161njih odmora \u2014 ", year, "."), recapLoading || !yearEntries ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "Ra\u010Dunanje..." }) : shownTotal === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: "Nema radnika koji odgovaraju filteru." }) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Dodijeljeno (", year, ")"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Iskori\u0161teno"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Preostalo"))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: 4, style: styles.groupHeader }, grp.name)), grp.workers.map((w) => {
     var _a, _b;
     const cumulative = cumulativeMap[w.id];
@@ -1571,7 +1587,8 @@ const styles = {
   companyName: { fontSize: 11, fontWeight: 700, color: GOLD, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 },
   printCompanyLine: { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#8a7f6d", marginBottom: 4 },
   subtitle: { fontSize: 11, color: "#8a7f6d", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 },
-  nav: { display: "flex", gap: 22 },
+  versionBadge: { fontSize: 10, fontWeight: 600, color: "#8a7f6d", background: "#f3ead2", border: "1px solid #e8e0cf", borderRadius: 999, padding: "1px 8px", letterSpacing: "0.02em" },
+  nav: { display: "flex", gap: 18, rowGap: 8, flexWrap: "wrap" },
   navBtn: {
     border: "none",
     borderBottom: "2px solid transparent",
@@ -1582,7 +1599,8 @@ const styles = {
     fontWeight: 600,
     cursor: "pointer",
     textTransform: "uppercase",
-    letterSpacing: "0.05em"
+    letterSpacing: "0.05em",
+    whiteSpace: "nowrap"
   },
   navBtnActive: { color: FOREST_DARK, borderBottom: `2px solid ${GOLD}` },
   backupBtn: { border: `1px solid #e8e0cf`, background: "#fff", color: "#8a7f6d", padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", marginLeft: 10 },
