@@ -61,6 +61,10 @@ function isWeekend(year, month, day) {
   const dow = new Date(year, month - 1, day).getDay();
   return dow === 0 || dow === 6;
 }
+function setWorkerGodisnjiAllocation(saveWorkers, year, id, value) {
+  const days = value === "" ? "" : Math.max(0, parseInt(value, 10) || 0);
+  saveWorkers((prev) => prev.map((w) => w.id === id ? { ...w, godisnji: { ...w.godisnji, [year]: days } } : w));
+}
 function Icon({ children, size = 16, style, strokeWidth = 1.8 }) {
   return /* @__PURE__ */ React.createElement(
     "svg",
@@ -238,6 +242,23 @@ function App() {
     },
     [entriesKey]
   );
+  const setCellsBulk = useCallback(
+    (updates) => {
+      setEntries((prev) => {
+        const next = { ...prev };
+        updates.forEach(({ workerId, day, code }) => {
+          const existing = next[workerId] || {};
+          next[workerId] = { ...existing };
+          delete next[workerId].__recap;
+          if (code) next[workerId][day] = code;
+          else delete next[workerId][day];
+        });
+        storageSet(entriesKey, next);
+        return next;
+      });
+    },
+    [entriesKey]
+  );
   const setWorkerRecap = useCallback(
     (workerId, counts) => {
       setEntries((prev) => {
@@ -273,8 +294,8 @@ function App() {
     setRecapLoading(false);
   }, [year]);
   useEffect(() => {
-    if (tab === "rekap" || tab === "godisnji") loadYear();
-  }, [tab, year, loadYear]);
+    if (tab === "rekap" || tab === "godisnji" || detailWorkerId) loadYear();
+  }, [tab, year, detailWorkerId, loadYear]);
   function countsForWorkerMonth(workerId, m, allEntries) {
     var _a;
     const counts = Object.fromEntries(STATUSES.map((s) => [s.code, 0]));
@@ -390,7 +411,7 @@ function App() {
       year,
       month,
       dayArr,
-      setCell,
+      setCellsBulk,
       onClose: () => setOcrModalOpen(false)
     }
   ), backupModalOpen && /* @__PURE__ */ React.createElement(BackupModal, { onClose: () => setBackupModalOpen(false) }));
@@ -550,8 +571,7 @@ function RadniciTab({ workers, saveWorkers, groups, saveGroups, year, setYear, o
     saveWorkers((prev) => prev.map((w) => w.id === id ? { ...w, groupId: groupId || null } : w));
   }
   function updateGodisnji(id, value) {
-    const days = value === "" ? "" : Math.max(0, parseInt(value, 10) || 0);
-    saveWorkers((prev) => prev.map((w) => w.id === id ? { ...w, godisnji: { ...w.godisnji, [year]: days } } : w));
+    setWorkerGodisnjiAllocation(saveWorkers, year, id, value);
   }
   function toggleActive(id) {
     saveWorkers((prev) => prev.map((w) => w.id === id ? { ...w, active: w.active === false } : w));
@@ -725,7 +745,7 @@ function rowsFromPlainText(text) {
   const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length >= 3);
   return lines.map((line, idx) => ({ id: "r" + idx, rawLine: line, codes: extractCodes(line) }));
 }
-function OcrImportModal({ workers, year, month, dayArr, setCell, onClose }) {
+function OcrImportModal({ workers, year, month, dayArr, setCellsBulk, onClose }) {
   const [imageDataUrl, setImageDataUrl] = useState(null);
   const [ocrRunning, setOcrRunning] = useState(false);
   const [progress, setProgress] = useState("");
@@ -792,7 +812,7 @@ function OcrImportModal({ workers, year, month, dayArr, setCell, onClose }) {
     setRows((prev) => prev.map((r) => r.id === id ? { ...r, ...patch } : r));
   }
   function handleApplyAll() {
-    let count = 0;
+    const updates = [];
     rows.forEach((r) => {
       if (!r.workerId) return;
       const tokens = r.codes.trim().split(/\s+/).filter(Boolean);
@@ -801,13 +821,13 @@ function OcrImportModal({ workers, year, month, dayArr, setCell, onClose }) {
         if (day > dayArr.length) return;
         const code = tok.toUpperCase();
         if (STATUS_MAP[code]) {
-          setCell(r.workerId, day, code);
-          count++;
+          updates.push({ workerId: r.workerId, day, code });
         }
       });
     });
+    setCellsBulk(updates);
     setApplied(true);
-    setAppliedCount(count);
+    setAppliedCount(updates.length);
   }
   return /* @__PURE__ */ React.createElement("div", { style: styles.modalOverlay, onClick: onClose, className: "modal-overlay no-print" }, /* @__PURE__ */ React.createElement("div", { style: { ...styles.modalCard, maxWidth: 760 }, onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { style: styles.modalHeader }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: styles.modalTitle }, "Uvoz sa slike (OCR)"), /* @__PURE__ */ React.createElement("div", { style: styles.modalSubtitle }, "Upisuje se u ", MONTH_NAMES[month - 1], " ", year, ". \u2014 prepoznavanje se radi lokalno u browseru")), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: onClose }, /* @__PURE__ */ React.createElement(IconClose, { size: 16 }))), /* @__PURE__ */ React.createElement("div", { style: styles.recapBadge }, "Ovo je pomo\u0107 pri unosu, ne siguran automatski uvoz: prepoznavanje tabele iz slike (koja rije\u010D pripada kojem radniku/danu) je osjetljivo na kvalitet skena i rukopis. Uvijek provjeri red prije primjene."), /* @__PURE__ */ React.createElement("div", { style: styles.modalSection }, /* @__PURE__ */ React.createElement("input", { type: "file", accept: "image/*", capture: "environment", onChange: handleFile, style: { marginBottom: 10 } }), imageDataUrl && /* @__PURE__ */ React.createElement("img", { src: imageDataUrl, alt: "\u0160ihta", style: styles.ocrPreview }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: runOcr, disabled: !imageDataUrl || ocrRunning }, ocrRunning ? "Prepoznavanje u toku..." : "Pokreni prepoznavanje teksta"), progress && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#8a7f6d" } }, progress)), error && /* @__PURE__ */ React.createElement("p", { style: { color: "#a3423a", fontSize: 12, marginTop: 8 } }, error), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, "Prvo pokretanje preuzima jezi\u010Dki paket (par MB) \u2014 treba internet konekcija. Radi najbolje na jasnim, od\u0161tampanim/kucanim tabelama, fotografisanim ravno i bez sjena.")), ocrText && /* @__PURE__ */ React.createElement("div", { style: styles.modalSection }, /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Tuma\u010Denje brojeva u kolonama"), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, 'U zvani\u010Dnoj \u0161ihti brojevi u kolonama obi\u010Dno zna\u010De odra\u0111ene sate (npr. "8" = pun radni dan). Izaberi u koji status prevesti svaku \u0107eliju s brojem \u2014 slovni kodovi (G, B, Z...) prepoznaju se kao i do sada.'), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 12 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#8a7f6d" } }, "Broj sati (npr. 8h) tuma\u010Di kao:"), /* @__PURE__ */ React.createElement("select", { value: hoursAsCode, onChange: (e) => setHoursAsCode(e.target.value), style: styles.select }, STATUSES.filter((s) => s.code === "K" || s.code === "T").map((s) => /* @__PURE__ */ React.createElement("option", { key: s.code, value: s.code }, s.label))), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: analyzeTable }, "Analiziraj tabelu (redovi i kolone)")), /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Prepoznati tekst (rezerva, ako gornje ne uspije)"), /* @__PURE__ */ React.createElement("textarea", { value: ocrText, onChange: (e) => setOcrText(e.target.value), style: styles.ocrTextarea, rows: 5 }), /* @__PURE__ */ React.createElement("button", { style: { ...styles.secondaryBtn, marginTop: 10 }, onClick: analyzePlainText }, "Analiziraj kao obi\u010Dni tekst (red po radnik)")), rows && /* @__PURE__ */ React.createElement("div", { style: styles.modalSection }, /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Provjeri i primijeni (", rows.length, " redova)"), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, 'Kodovi po danima, razmakom odvojeni, redom od 1. dana (npr. "K K T T G B"). Ako se kolone nisu poklopile s pravim danima, ispravi ovdje prije primjene. "\u2014 presko\u010Di \u2014" ignori\u0161e red.'), /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, textAlign: "left" } }, "Prepoznato ime"), /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, textAlign: "left" } }, "Radnik"), /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, textAlign: "left" } }, "Kodovi po danima"))), /* @__PURE__ */ React.createElement("tbody", null, rows.map((r) => /* @__PURE__ */ React.createElement("tr", { key: r.id }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, textAlign: "left", fontSize: 11, color: "#8a7f6d", maxWidth: 160 } }, r.rawLine), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement("select", { value: r.workerId, onChange: (e) => updateRow(r.id, { workerId: e.target.value }), style: styles.select }, /* @__PURE__ */ React.createElement("option", { value: "" }, "\u2014 presko\u010Di \u2014"), workers.map((w) => /* @__PURE__ */ React.createElement("option", { key: w.id, value: w.id }, w.name)))), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement(
     "input",
@@ -829,8 +849,7 @@ function GodisnjiTab({ workers, saveWorkers, groups, year, setYear, yearEntries,
   const shownTotal = groupedWorkers.reduce((s, g) => s + g.workers.length, 0);
   const filterActive = search.trim() !== "" || groupFilter !== "all";
   function updateGodisnji(id, value) {
-    const days = value === "" ? "" : Math.max(0, parseInt(value, 10) || 0);
-    saveWorkers((prev) => prev.map((w) => w.id === id ? { ...w, godisnji: { ...w.godisnji, [year]: days } } : w));
+    setWorkerGodisnjiAllocation(saveWorkers, year, id, value);
   }
   return /* @__PURE__ */ React.createElement("div", { style: styles.panel }, /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.yearPicker }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, "Godina:"), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year - 1) }, /* @__PURE__ */ React.createElement(IconChevronLeft, { size: 16 })), /* @__PURE__ */ React.createElement("div", { style: styles.monthLabel }, year), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year + 1) }, /* @__PURE__ */ React.createElement(IconChevronRight, { size: 16 }))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: shownTotal, total: activeTotal, active: filterActive }), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " \u0160tampaj"))), /* @__PURE__ */ React.createElement(PrintTitle, null, "Pregled godi\u0161njih odmora \u2014 ", year, "."), recapLoading || !yearEntries ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "Ra\u010Dunanje..." }) : shownTotal === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: "Nema radnika koji odgovaraju filteru." }) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Dodijeljeno (", year, ")"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Iskori\u0161teno"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Preostalo"))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: 4, style: styles.groupHeader }, grp.name)), grp.workers.map((w) => {
     var _a, _b;
@@ -954,6 +973,9 @@ function WorkerDetailModal({ worker, groups, year, month, entries, setWorkerReca
   const usedYear = yearGodisnjiUsed(worker.id);
   const remaining = allocated === "" ? null : allocated - usedYear;
   function saveRecap() {
+    const dailyMap = entries[worker.id] || {};
+    const hasDailyEntries = !existingRecap && Object.keys(dailyMap).length > 0;
+    if (hasDailyEntries && !confirm("Spremanje rekapitulacije briše sve pojedinačno unesene dane za ovaj mjesec. Nastaviti?")) return;
     setWorkerRecap(worker.id, draft);
   }
   function switchToDaily() {
