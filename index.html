@@ -345,7 +345,7 @@ function App() {
     setRecapLoading(false);
   }, [year]);
   useEffect(() => {
-    if (tab === "rekap" || tab === "godisnji" || detailWorkerId) loadYear();
+    if (tab === "rekap" || tab === "godisnji" || tab === "bolovanje" || detailWorkerId) loadYear();
   }, [tab, year, detailWorkerId, loadYear]);
   function countsForWorkerMonth(workerId, m, allEntries) {
     var _a;
@@ -361,23 +361,35 @@ function App() {
     });
     return counts;
   }
-  function yearGodisnjiUsed(workerId) {
+  function yearCodeUsed(workerId, code) {
     var _a;
     if (!yearEntries) return 0;
     let sum = 0;
     for (let m = 1; m <= 12; m++) {
       const monthEntries = (_a = yearEntries[m]) == null ? void 0 : _a[workerId];
       if (!monthEntries) continue;
-      if (monthEntries.__recap) sum += monthEntries.__recap.G || 0;
-      else sum += Object.values(monthEntries).filter((c) => c === "G").length;
+      if (monthEntries.__recap) sum += monthEntries.__recap[code] || 0;
+      else sum += Object.values(monthEntries).filter((c) => c === code).length;
     }
     return sum;
+  }
+  function yearGodisnjiUsed(workerId) {
+    return yearCodeUsed(workerId, "G");
+  }
+  function currentBolovanjeStatus(workerId) {
+    const today = /* @__PURE__ */ new Date();
+    if (year !== today.getFullYear() || !yearEntries) return null;
+    const m = today.getMonth() + 1;
+    const monthEntries = yearEntries[m] && yearEntries[m][workerId];
+    if (!monthEntries || monthEntries.__recap) return null;
+    return monthEntries[today.getDate()] === "B";
   }
   return /* @__PURE__ */ React.createElement("div", { style: styles.app }, /* @__PURE__ */ React.createElement("style", null, GLOBAL_CSS), /* @__PURE__ */ React.createElement("div", { className: "app-shell" }, /* @__PURE__ */ React.createElement("header", { style: { ...styles.header }, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.brandRow }, /* @__PURE__ */ React.createElement("div", { style: styles.monogram }, "\u0160"), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: styles.companyName }, COMPANY_NAME), /* @__PURE__ */ React.createElement("div", { style: styles.title }, "\u0160ihta"), /* @__PURE__ */ React.createElement("div", { style: styles.subtitle }, "Evidencija radnog vremena"))), /* @__PURE__ */ React.createElement("nav", { style: styles.nav }, [
     ["unos", "Unos \u0161ihte"],
     ["radnici", "Radnici i grupe"],
     ["rekap", "Rekapitulacija"],
-    ["godisnji", "Godi\u0161nji odmor"]
+    ["godisnji", "Godi\u0161nji odmor"],
+    ["bolovanje", "Bolovanje"]
   ].map(([key, label]) => /* @__PURE__ */ React.createElement(
     "button",
     {
@@ -429,7 +441,7 @@ function App() {
       yearGodisnjiUsed,
       onSelectWorker: setDetailWorkerId
     }
-  ) : /* @__PURE__ */ React.createElement(
+  ) : tab === "godisnji" ? /* @__PURE__ */ React.createElement(
     GodisnjiTab,
     {
       workers,
@@ -440,6 +452,19 @@ function App() {
       yearEntries,
       recapLoading,
       yearGodisnjiUsed,
+      onSelectWorker: setDetailWorkerId
+    }
+  ) : /* @__PURE__ */ React.createElement(
+    BolovanjeTab,
+    {
+      workers,
+      groups,
+      year,
+      setYear,
+      yearEntries,
+      recapLoading,
+      yearCodeUsed,
+      currentBolovanjeStatus,
       onSelectWorker: setDetailWorkerId
     }
   )), detailWorkerId && workers.find((w) => w.id === detailWorkerId) && /* @__PURE__ */ React.createElement(
@@ -936,6 +961,129 @@ function GodisnjiTab({ workers, saveWorkers, groups, year, setYear, yearEntries,
       }
     ), /* @__PURE__ */ React.createElement("span", { className: "print-only-inline" }, allocated === "" ? "\u2014" : allocated))), /* @__PURE__ */ React.createElement("td", { style: styles.td }, used), /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, fontWeight: 700, color: remaining !== null && remaining < 0 ? "#a3423a" : "#3f7d5c" } }, remaining === null ? "\u2014" : remaining));
   })))))), /* @__PURE__ */ React.createElement("p", { style: styles.hint, className: "no-print" }, 'Broj dodijeljenih dana unosi se ovdje (obi\u010Dno nakon rje\u0161enja o godi\u0161njem odmoru u junu). "Preostalo" = dodijeljeno za ', year, ". godinu minus svi dani sa oznakom G uneseni kroz cijelu ", year, ". godinu."));
+}
+function StatBox({ label, value }) {
+  return React.createElement(
+    "div",
+    { style: styles.statBox },
+    React.createElement("div", { style: styles.statLabel }, label),
+    React.createElement("div", { style: styles.statValue }, value)
+  );
+}
+function BolovanjeTab({ workers, groups, year, setYear, yearEntries, recapLoading, yearCodeUsed, currentBolovanjeStatus, onSelectWorker }) {
+  const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const activeTotal = workers.filter((w) => w.active !== false).length;
+  const groupedWorkers = useMemo(
+    () => computeGroupedWorkers(workers, groups, search, groupFilter),
+    [workers, groups, search, groupFilter]
+  );
+  const shownTotal = groupedWorkers.reduce((s, g) => s + g.workers.length, 0);
+  const filterActive = search.trim() !== "" || groupFilter !== "all";
+  const stats = useMemo(() => {
+    if (!yearEntries) return null;
+    let totalDays = 0;
+    let workersWithDays = 0;
+    let currentlyOut = 0;
+    workers.forEach((w) => {
+      const days = yearCodeUsed(w.id, "B");
+      if (days > 0) {
+        totalDays += days;
+        workersWithDays++;
+      }
+      if (currentBolovanjeStatus(w.id)) currentlyOut++;
+    });
+    const avg = workersWithDays > 0 ? totalDays / workersWithDays : 0;
+    return { totalDays, workersWithDays, currentlyOut, avg };
+  }, [workers, yearEntries, year]);
+  const toolbarEl = React.createElement(
+    "div",
+    { style: styles.toolbar, className: "no-print" },
+    React.createElement(
+      "div",
+      { style: styles.yearPicker },
+      React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, "Godina:"),
+      React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year - 1) }, React.createElement(IconChevronLeft, { size: 16 })),
+      React.createElement("div", { style: styles.monthLabel }, year),
+      React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year + 1) }, React.createElement(IconChevronRight, { size: 16 }))
+    ),
+    React.createElement(
+      "div",
+      { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } },
+      React.createElement(SearchBox, { search, setSearch }),
+      React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }),
+      React.createElement(FilterCount, { shown: shownTotal, total: activeTotal, active: filterActive }),
+      React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, React.createElement(IconPrint, { size: 15 }), " \u0160tampaj")
+    )
+  );
+  const statsEl = stats ? React.createElement(
+    "div",
+    { style: styles.modalStatsRow },
+    React.createElement(StatBox, { label: "Trenutno na bolovanju", value: stats.currentlyOut }),
+    React.createElement(StatBox, { label: "Radnika s bolovanjem u " + year + ".", value: stats.workersWithDays }),
+    React.createElement(StatBox, { label: "Ukupno dana bolovanja (" + year + ")", value: stats.totalDays }),
+    React.createElement(StatBox, { label: "Prosjek dana po radniku", value: stats.avg.toFixed(1) })
+  ) : null;
+  const bodyEl = recapLoading || !yearEntries ? React.createElement(LoadingLine, { text: "Ra\u010Dunanje..." }) : shownTotal === 0 ? React.createElement(EmptyState, { text: "Nema radnika koji odgovaraju filteru." }) : React.createElement(
+    "div",
+    { style: styles.tableScroll },
+    React.createElement(
+      "table",
+      { style: styles.table },
+      React.createElement(
+        "thead",
+        null,
+        React.createElement(
+          "tr",
+          null,
+          React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"),
+          React.createElement("th", { style: styles.th }, "Trenutno"),
+          React.createElement("th", { style: styles.th }, "Dana bolovanja (", year, ")")
+        )
+      ),
+      React.createElement(
+        "tbody",
+        null,
+        groupedWorkers.map((grp) => React.createElement(
+          React.Fragment,
+          { key: grp.id },
+          groups.length > 0 && React.createElement(
+            "tr",
+            { key: "h-" + grp.id },
+            React.createElement("td", { colSpan: 3, style: styles.groupHeader }, grp.name)
+          ),
+          grp.workers.map((w) => {
+            const days = yearCodeUsed(w.id, "B");
+            const isOut = currentBolovanjeStatus(w.id);
+            return React.createElement(
+              "tr",
+              { key: w.id, className: "hover-row" },
+              React.createElement(
+                "td",
+                { style: { ...styles.td, ...styles.stickyCol, textAlign: "left" } },
+                React.createElement("button", { style: styles.workerNameBtn, onClick: () => onSelectWorker(w.id) }, w.name)
+              ),
+              React.createElement(
+                "td",
+                { style: { ...styles.td, fontWeight: isOut ? 700 : 400, color: isOut ? "#a3423a" : "#8a7f6d" } },
+                isOut ? "Da" : isOut === false ? "Ne" : "\u2014"
+              ),
+              React.createElement("td", { style: { ...styles.td, fontWeight: days > 0 ? 700 : 400 } }, days)
+            );
+          })
+        ))
+      )
+    )
+  );
+  return React.createElement(
+    "div",
+    { style: styles.panel },
+    toolbarEl,
+    React.createElement(PrintTitle, null, "Pregled bolovanja \u2014 ", year, "."),
+    statsEl,
+    bodyEl,
+    React.createElement("p", { style: styles.hint, className: "no-print" }, '"Trenutno" pokazuje da li radnik ima unesen kod "B" za dana\u0161nji dan (samo za teku\u0107u godinu i dane unesene pojedina\u010Dno, ne kroz rekapitulaciju). "Dana bolovanja" je zbir svih "B" dana unesenih kroz cijelu ', year, ". godinu.")
+  );
 }
 function PrintReportModal({ workers, groups, year, onClose }) {
   const [scope, setScope] = useState("svi");
