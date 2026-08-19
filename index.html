@@ -106,8 +106,7 @@ async function computeWorkerLeaveBalance(worker, uptoYear) {
   const startMonth = parseInt(startDate.slice(5, 7), 10);
   const startDay = parseInt(startDate.slice(8, 10), 10);
   if (uptoYear < startYear) return { allocated: 0, used: 0, remaining: 0 };
-  const startYearDays = Math.round(annualDays * (13 - startMonth) / 12);
-  const allocated = startYearDays + annualDays * (uptoYear - startYear);
+  const allocated = annualDays * (uptoYear - startYear + 1);
   let used = 0;
   for (let y = startYear; y <= uptoYear; y++) {
     const firstMonth = y === startYear ? startMonth : 1;
