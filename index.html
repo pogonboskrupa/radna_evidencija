@@ -65,6 +65,56 @@ function setWorkerGodisnjiAllocation(saveWorkers, year, id, value) {
   const days = value === "" ? "" : Math.max(0, parseInt(value, 10) || 0);
   saveWorkers((prev) => prev.map((w) => w.id === id ? { ...w, godisnji: { ...w.godisnji, [year]: days } } : w));
 }
+async function computeWorkerLeaveBalance(worker, uptoYear) {
+  const annualDays = worker.leaveAnnualDays;
+  const startDate = worker.leaveStartDate;
+  if (!startDate || !annualDays) return null;
+  const startYear = parseInt(startDate.slice(0, 4), 10);
+  const startMonth = parseInt(startDate.slice(5, 7), 10);
+  const startDay = parseInt(startDate.slice(8, 10), 10);
+  if (uptoYear < startYear) return { allocated: 0, used: 0, remaining: 0 };
+  const allocated = annualDays * (uptoYear - startYear + 1);
+  let used = 0;
+  for (let y = startYear; y <= uptoYear; y++) {
+    const firstMonth = y === startYear ? startMonth : 1;
+    for (let m = firstMonth; m <= 12; m++) {
+      const monthEntries = await storageGet(`entries:${y}-${pad(m)}`, {});
+      const workerEntries = monthEntries[worker.id];
+      if (!workerEntries) continue;
+      if (workerEntries.__recap) {
+        used += workerEntries.__recap.G || 0;
+      } else {
+        Object.entries(workerEntries).forEach(([day, code]) => {
+          if (code !== "G") return;
+          if (y === startYear && m === startMonth && parseInt(day, 10) < startDay) return;
+          used++;
+        });
+      }
+    }
+  }
+  return { allocated, used, remaining: allocated - used };
+}
+async function computeLegacyLeaveUsed(workerId, year) {
+  let used = 0;
+  for (let m = 1; m <= 12; m++) {
+    const monthEntries = await storageGet(`entries:${year}-${pad(m)}`, {});
+    const workerEntries = monthEntries[workerId];
+    if (!workerEntries) continue;
+    if (workerEntries.__recap) used += workerEntries.__recap.G || 0;
+    else Object.values(workerEntries).forEach((code) => {
+      if (code === "G") used++;
+    });
+  }
+  return used;
+}
+async function getWorkerLeaveSummary(worker, year) {
+  var _a, _b;
+  const cumulative = await computeWorkerLeaveBalance(worker, year);
+  if (cumulative) return { ...cumulative, mode: "cumulative" };
+  const allocated = (_b = (_a = worker.godisnji) == null ? void 0 : _a[year]) != null ? _b : 0;
+  const used = await computeLegacyLeaveUsed(worker.id, year);
+  return { allocated, used, remaining: allocated - used, mode: "legacy" };
+}
 function Icon({ children, size = 16, style, strokeWidth = 1.8 }) {
   return /* @__PURE__ */ React.createElement(
     "svg",
@@ -282,6 +332,7 @@ function App() {
   const [detailWorkerId, setDetailWorkerId] = useState(null);
   const [ocrModalOpen, setOcrModalOpen] = useState(false);
   const [backupModalOpen, setBackupModalOpen] = useState(false);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
   const nDays = daysInMonth(year, month);
   const dayArr = Array.from({ length: nDays }, (_, i) => i + 1);
   const loadYear = useCallback(async () => {
@@ -335,7 +386,7 @@ function App() {
       style: { ...styles.navBtn, ...tab === key ? styles.navBtnActive : {} }
     },
     label
-  )), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Sigurnosna kopija podataka", onClick: () => setBackupModalOpen(true) }, /* @__PURE__ */ React.createElement(IconSave, { size: 14 }), " Backup"))), !loaded ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "U\u010Ditavanje..." }) : tab === "unos" ? /* @__PURE__ */ React.createElement(
+  )), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Štampanje po radniku, grupi ili prilagođeno", onClick: () => setPrintModalOpen(true) }, /* @__PURE__ */ React.createElement(IconPrint, { size: 14 }), " Štampaj"), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Sigurnosna kopija podataka", onClick: () => setBackupModalOpen(true) }, /* @__PURE__ */ React.createElement(IconSave, { size: 14 }), " Backup"))), !loaded ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "U\u010Ditavanje..." }) : tab === "unos" ? /* @__PURE__ */ React.createElement(
     UnosTab,
     {
       workers,
@@ -401,6 +452,7 @@ function App() {
       entries,
       setWorkerRecap,
       clearWorkerRecap,
+      saveWorkers,
       yearGodisnjiUsed,
       onClose: () => setDetailWorkerId(null)
     }
@@ -414,7 +466,7 @@ function App() {
       setCellsBulk,
       onClose: () => setOcrModalOpen(false)
     }
-  ), backupModalOpen && /* @__PURE__ */ React.createElement(BackupModal, { onClose: () => setBackupModalOpen(false) }));
+  ), backupModalOpen && /* @__PURE__ */ React.createElement(BackupModal, { onClose: () => setBackupModalOpen(false) }), printModalOpen && /* @__PURE__ */ React.createElement(PrintReportModal, { workers, groups, year, onClose: () => setPrintModalOpen(false) }));
 }
 function PrintTitle({ children }) {
   return /* @__PURE__ */ React.createElement("div", { className: "print-title", style: { display: "none" } }, /* @__PURE__ */ React.createElement("div", { style: styles.printCompanyLine }, COMPANY_NAME), /* @__PURE__ */ React.createElement("div", null, children));
@@ -851,12 +903,27 @@ function GodisnjiTab({ workers, saveWorkers, groups, year, setYear, yearEntries,
   function updateGodisnji(id, value) {
     setWorkerGodisnjiAllocation(saveWorkers, year, id, value);
   }
+  const [cumulativeMap, setCumulativeMap] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        workers.filter((w) => w.leaveAnnualDays && w.leaveStartDate).map(async (w) => [w.id, await computeWorkerLeaveBalance(w, year)])
+      );
+      if (!cancelled) setCumulativeMap(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workers, year]);
   return /* @__PURE__ */ React.createElement("div", { style: styles.panel }, /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.yearPicker }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, "Godina:"), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year - 1) }, /* @__PURE__ */ React.createElement(IconChevronLeft, { size: 16 })), /* @__PURE__ */ React.createElement("div", { style: styles.monthLabel }, year), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year + 1) }, /* @__PURE__ */ React.createElement(IconChevronRight, { size: 16 }))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: shownTotal, total: activeTotal, active: filterActive }), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " \u0160tampaj"))), /* @__PURE__ */ React.createElement(PrintTitle, null, "Pregled godi\u0161njih odmora \u2014 ", year, "."), recapLoading || !yearEntries ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "Ra\u010Dunanje..." }) : shownTotal === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: "Nema radnika koji odgovaraju filteru." }) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Dodijeljeno (", year, ")"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Iskori\u0161teno"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Preostalo"))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: 4, style: styles.groupHeader }, grp.name)), grp.workers.map((w) => {
     var _a, _b;
-    const allocated = (_b = (_a = w.godisnji) == null ? void 0 : _a[year]) != null ? _b : "";
-    const used = yearGodisnjiUsed(w.id);
-    const remaining = allocated === "" ? null : allocated - used;
-    return /* @__PURE__ */ React.createElement("tr", { key: w.id, className: "hover-row" }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, ...styles.stickyCol, textAlign: "left" } }, /* @__PURE__ */ React.createElement("button", { style: styles.workerNameBtn, onClick: () => onSelectWorker(w.id) }, w.name)), /* @__PURE__ */ React.createElement("td", { style: styles.td }, /* @__PURE__ */ React.createElement(
+    const cumulative = cumulativeMap[w.id];
+    const isCumulative = !!(w.leaveAnnualDays && w.leaveStartDate);
+    const allocated = isCumulative ? cumulative ? cumulative.allocated : "" : (_b = (_a = w.godisnji) == null ? void 0 : _a[year]) != null ? _b : "";
+    const used = isCumulative ? cumulative ? cumulative.used : 0 : yearGodisnjiUsed(w.id);
+    const remaining = isCumulative ? cumulative ? cumulative.remaining : null : allocated === "" ? null : allocated - used;
+    return /* @__PURE__ */ React.createElement("tr", { key: w.id, className: "hover-row" }, /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, ...styles.stickyCol, textAlign: "left" } }, /* @__PURE__ */ React.createElement("button", { style: styles.workerNameBtn, onClick: () => onSelectWorker(w.id) }, w.name)), /* @__PURE__ */ React.createElement("td", { style: styles.td }, isCumulative ? /* @__PURE__ */ React.createElement("span", { title: "Kumulativno (postavljeno u kartonu radnika)" }, allocated === "" ? "\u2014" : allocated) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(
       "input",
       {
         type: "number",
@@ -867,8 +934,216 @@ function GodisnjiTab({ workers, saveWorkers, groups, year, setYear, yearEntries,
         placeholder: "\u2014",
         className: "no-print"
       }
-    ), /* @__PURE__ */ React.createElement("span", { className: "print-only-inline" }, allocated === "" ? "\u2014" : allocated)), /* @__PURE__ */ React.createElement("td", { style: styles.td }, used), /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, fontWeight: 700, color: remaining !== null && remaining < 0 ? "#a3423a" : "#3f7d5c" } }, remaining === null ? "\u2014" : remaining));
+    ), /* @__PURE__ */ React.createElement("span", { className: "print-only-inline" }, allocated === "" ? "\u2014" : allocated))), /* @__PURE__ */ React.createElement("td", { style: styles.td }, used), /* @__PURE__ */ React.createElement("td", { style: { ...styles.td, fontWeight: 700, color: remaining !== null && remaining < 0 ? "#a3423a" : "#3f7d5c" } }, remaining === null ? "\u2014" : remaining));
   })))))), /* @__PURE__ */ React.createElement("p", { style: styles.hint, className: "no-print" }, 'Broj dodijeljenih dana unosi se ovdje (obi\u010Dno nakon rje\u0161enja o godi\u0161njem odmoru u junu). "Preostalo" = dodijeljeno za ', year, ". godinu minus svi dani sa oznakom G uneseni kroz cijelu ", year, ". godinu."));
+}
+function PrintReportModal({ workers, groups, year, onClose }) {
+  const [scope, setScope] = useState("svi");
+  const [workerId, setWorkerId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [customIds, setCustomIds] = useState(() => /* @__PURE__ */ new Set());
+  const [rows, setRows] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const sortedWorkers = useMemo(
+    () => [...workers].sort((a, b) => a.name.localeCompare(b.name, "bs")),
+    [workers]
+  );
+  function resetRows() {
+    setRows(null);
+  }
+  function toggleCustom(id) {
+    setCustomIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    resetRows();
+  }
+  function getSelectedWorkers() {
+    if (scope === "radnik") return workers.filter((w) => w.id === workerId);
+    if (scope === "grupa") return workers.filter((w) => (w.groupId || NO_GROUP) === groupId);
+    if (scope === "custom") return workers.filter((w) => customIds.has(w.id));
+    return workers;
+  }
+  async function buildPreview() {
+    const selected = getSelectedWorkers();
+    if (selected.length === 0) {
+      setRows([]);
+      return;
+    }
+    setLoading(true);
+    const built = await Promise.all(selected.map(async (w) => {
+      const summary = await getWorkerLeaveSummary(w, year);
+      const group = groups.find((g) => g.id === w.groupId);
+      return { worker: w, groupName: group ? group.name : "—", ...summary };
+    }));
+    built.sort((a, b) => a.worker.name.localeCompare(b.worker.name, "bs"));
+    setRows(built);
+    setLoading(false);
+  }
+  function handlePrint() {
+    if (!rows || rows.length === 0) return;
+    document.body.classList.add("printing-report");
+    const cleanup = () => {
+      document.body.classList.remove("printing-report");
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+  }
+  const scopeLabel = scope === "radnik" ? (workers.find((w) => w.id === workerId) || {}).name || "— izaberi radnika —" : scope === "grupa" ? (groupId === NO_GROUP ? "Bez grupe" : (groups.find((g) => g.id === groupId) || {}).name || "— izaberi grupu —") : scope === "custom" ? `Prilagođeni odabir (${customIds.size} radnika)` : "Svi radnici";
+  const headerEl = React.createElement(
+    "div",
+    { style: styles.modalHeader, className: "no-print" },
+    React.createElement(
+      "div",
+      null,
+      React.createElement("div", { style: styles.modalTitle }, "Štampanje pregleda godišnjih odmora"),
+      React.createElement("div", { style: styles.modalSubtitle }, "Izaberi radnika, grupu, sve ili prilagođeni odabir za ", year, ". godinu")
+    ),
+    React.createElement("button", { style: styles.iconBtn, onClick: onClose }, React.createElement(IconClose, { size: 16 }))
+  );
+  const scopeButtonsEl = React.createElement(
+    "div",
+    { style: styles.viewToggle },
+    [["svi", "Svi radnici"], ["grupa", "Grupa"], ["radnik", "Jedan radnik"], ["custom", "Prilagođeno"]].map(([key, label]) => React.createElement(
+      "button",
+      {
+        key,
+        onClick: () => {
+          setScope(key);
+          resetRows();
+        },
+        style: { ...styles.toggleBtn, ...scope === key ? styles.toggleBtnActive : {} }
+      },
+      label
+    ))
+  );
+  let pickerEl = null;
+  if (scope === "radnik") {
+    pickerEl = React.createElement(
+      "select",
+      {
+        value: workerId,
+        onChange: (e) => {
+          setWorkerId(e.target.value);
+          resetRows();
+        },
+        style: { ...styles.select, marginTop: 10 }
+      },
+      React.createElement("option", { value: "" }, "— izaberi radnika —"),
+      sortedWorkers.map((w) => React.createElement("option", { key: w.id, value: w.id }, w.name))
+    );
+  } else if (scope === "grupa") {
+    pickerEl = React.createElement(
+      "select",
+      {
+        value: groupId,
+        onChange: (e) => {
+          setGroupId(e.target.value);
+          resetRows();
+        },
+        style: { ...styles.select, marginTop: 10 }
+      },
+      React.createElement("option", { value: "" }, "— izaberi grupu —"),
+      groups.map((g) => React.createElement("option", { key: g.id, value: g.id }, g.name)),
+      React.createElement("option", { value: NO_GROUP }, "Bez grupe")
+    );
+  } else if (scope === "custom") {
+    pickerEl = React.createElement(
+      "div",
+      { style: { marginTop: 10 } },
+      React.createElement(
+        "div",
+        { style: { display: "flex", gap: 8, marginBottom: 8 } },
+        React.createElement("button", { style: styles.secondaryBtn, onClick: () => {
+          setCustomIds(new Set(workers.map((w) => w.id)));
+          resetRows();
+        } }, "Izaberi sve"),
+        React.createElement("button", { style: styles.secondaryBtn, onClick: () => {
+          setCustomIds(/* @__PURE__ */ new Set());
+          resetRows();
+        } }, "Poništi odabir")
+      ),
+      React.createElement(
+        "div",
+        { style: { maxHeight: 200, overflowY: "auto", border: "1px solid #e8e0cf", borderRadius: 8, padding: 8 } },
+        sortedWorkers.map((w) => React.createElement(
+          "label",
+          { key: w.id, style: { display: "flex", alignItems: "center", gap: 8, padding: "4px 2px", fontSize: 13 } },
+          React.createElement("input", { type: "checkbox", checked: customIds.has(w.id), onChange: () => toggleCustom(w.id) }),
+          w.name
+        ))
+      )
+    );
+  }
+  const actionsEl = React.createElement(
+    "div",
+    { style: { display: "flex", gap: 8, marginTop: 14, alignItems: "center" } },
+    React.createElement("button", { style: styles.primaryBtn, onClick: buildPreview, disabled: loading }, loading ? "Učitavanje..." : "Prikaži pregled"),
+    React.createElement("button", { style: styles.secondaryBtn, onClick: handlePrint, disabled: !rows || rows.length === 0 }, React.createElement(IconPrint, { size: 14 }), " Štampaj")
+  );
+  const configSectionEl = React.createElement(
+    "div",
+    { style: styles.modalSection, className: "no-print" },
+    scopeButtonsEl,
+    pickerEl,
+    actionsEl
+  );
+  const printTitleEl = React.createElement(PrintTitle, null, "Pregled godišnjih odmora — ", scopeLabel, " — ", year, ".");
+  const emptyEl = rows && rows.length === 0 ? React.createElement(EmptyState, { text: "Nema radnika u ovom odabiru." }) : null;
+  const tableEl = rows && rows.length > 0 ? React.createElement(
+    "div",
+    { style: styles.modalSection },
+    React.createElement(
+      "div",
+      { style: styles.tableScroll },
+      React.createElement(
+        "table",
+        { style: styles.table },
+        React.createElement(
+          "thead",
+          null,
+          React.createElement(
+            "tr",
+            null,
+            React.createElement("th", { style: { ...styles.th, textAlign: "left" } }, "Radnik"),
+            React.createElement("th", { style: { ...styles.th, textAlign: "left" } }, "Grupa"),
+            React.createElement("th", { style: styles.th }, "Dodijeljeno"),
+            React.createElement("th", { style: styles.th }, "Iskorišteno"),
+            React.createElement("th", { style: styles.th }, "Preostalo")
+          )
+        ),
+        React.createElement(
+          "tbody",
+          null,
+          rows.map((r) => React.createElement(
+            "tr",
+            { key: r.worker.id },
+            React.createElement("td", { style: { ...styles.td, textAlign: "left" } }, r.worker.name),
+            React.createElement("td", { style: { ...styles.td, textAlign: "left" } }, r.groupName),
+            React.createElement("td", { style: styles.td }, r.allocated === "" ? "—" : r.allocated),
+            React.createElement("td", { style: styles.td }, r.used),
+            React.createElement("td", { style: { ...styles.td, fontWeight: 700, color: r.remaining !== null && r.remaining < 0 ? "#a3423a" : "#3f7d5c" } }, r.remaining === null ? "—" : r.remaining)
+          ))
+        )
+      )
+    )
+  ) : null;
+  return React.createElement(
+    "div",
+    { style: styles.modalOverlay, onClick: onClose, className: "modal-overlay" },
+    React.createElement(
+      "div",
+      { style: { ...styles.modalCard, maxWidth: 680 }, className: "modal-card", onClick: (e) => e.stopPropagation() },
+      headerEl,
+      configSectionEl,
+      printTitleEl,
+      emptyEl,
+      tableEl
+    )
+  );
 }
 function BackupModal({ onClose }) {
   const [busy, setBusy] = useState(false);
@@ -932,7 +1207,7 @@ function BackupModal({ onClose }) {
 function EmptyState({ text }) {
   return /* @__PURE__ */ React.createElement("div", { style: styles.empty }, /* @__PURE__ */ React.createElement(IconUsers, { style: { color: "#d8cfb8", marginBottom: 10 } }), /* @__PURE__ */ React.createElement("div", null, text));
 }
-function WorkerDetailModal({ worker, groups, year, month, entries, setWorkerRecap, clearWorkerRecap, yearGodisnjiUsed, onClose }) {
+function WorkerDetailModal({ worker, groups, year, month, entries, setWorkerRecap, clearWorkerRecap, saveWorkers, yearGodisnjiUsed, onClose }) {
   var _a, _b, _c;
   const existingRecap = (_a = entries[worker.id]) == null ? void 0 : _a.__recap;
   const [mode, setMode] = useState(existingRecap ? "recap" : "daily");
@@ -969,9 +1244,29 @@ function WorkerDetailModal({ worker, groups, year, month, entries, setWorkerReca
     };
   }, [worker.id, year]);
   const group = groups.find((g) => g.id === worker.groupId);
-  const allocated = (_c = (_b = worker.godisnji) == null ? void 0 : _b[year]) != null ? _c : "";
-  const usedYear = yearGodisnjiUsed(worker.id);
-  const remaining = allocated === "" ? null : allocated - usedYear;
+  const cumulativeConfigured = !!(worker.leaveAnnualDays && worker.leaveStartDate);
+  const [leaveBalance, setLeaveBalance] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!cumulativeConfigured) {
+      setLeaveBalance(null);
+      return;
+    }
+    computeWorkerLeaveBalance(worker, year).then((res) => {
+      if (!cancelled) setLeaveBalance(res);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [worker.id, worker.leaveAnnualDays, worker.leaveStartDate, year, entries]);
+  const legacyAllocated = (_c = (_b = worker.godisnji) == null ? void 0 : _b[year]) != null ? _c : "";
+  const legacyUsedYear = yearGodisnjiUsed(worker.id);
+  const allocated = cumulativeConfigured ? leaveBalance ? leaveBalance.allocated : "" : legacyAllocated;
+  const usedYear = cumulativeConfigured ? leaveBalance ? leaveBalance.used : 0 : legacyUsedYear;
+  const remaining = cumulativeConfigured ? leaveBalance ? leaveBalance.remaining : null : legacyAllocated === "" ? null : legacyAllocated - legacyUsedYear;
+  function updateLeaveSettings(patch) {
+    saveWorkers((prev) => prev.map((w) => w.id === worker.id ? { ...w, ...patch } : w));
+  }
   function saveRecap() {
     const dailyMap = entries[worker.id] || {};
     const hasDailyEntries = !existingRecap && Object.keys(dailyMap).length > 0;
@@ -992,7 +1287,7 @@ function WorkerDetailModal({ worker, groups, year, month, entries, setWorkerReca
     window.addEventListener("afterprint", cleanup);
     window.print();
   }
-  return /* @__PURE__ */ React.createElement("div", { style: styles.modalOverlay, onClick: onClose, className: "modal-overlay" }, /* @__PURE__ */ React.createElement("div", { style: styles.modalCard, className: "modal-card", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { style: styles.modalHeader }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: styles.modalTitle }, worker.name), group && /* @__PURE__ */ React.createElement("div", { style: styles.modalSubtitle }, group.name)), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6 } }, /* @__PURE__ */ React.createElement("button", { className: "no-print", style: styles.iconBtn, title: "\u0160tampaj karton radnika", onClick: printWorkerCard }, /* @__PURE__ */ React.createElement(IconPrint, { size: 16 })), /* @__PURE__ */ React.createElement("button", { className: "no-print", style: styles.iconBtn, onClick: onClose }, /* @__PURE__ */ React.createElement(IconClose, { size: 16 })))), /* @__PURE__ */ React.createElement(PrintTitle, null, worker.name, " \u2014 karton za ", year, ". godinu ", group ? `(${group.name})` : ""), /* @__PURE__ */ React.createElement("div", { style: styles.modalStatsRow }, /* @__PURE__ */ React.createElement("div", { style: styles.statBox }, /* @__PURE__ */ React.createElement("div", { style: styles.statLabel }, "Godi\u0161nji ", year, "."), /* @__PURE__ */ React.createElement("div", { style: styles.statValue }, allocated === "" ? "\u2014" : allocated)), /* @__PURE__ */ React.createElement("div", { style: styles.statBox }, /* @__PURE__ */ React.createElement("div", { style: styles.statLabel }, "Iskori\u0161teno"), /* @__PURE__ */ React.createElement("div", { style: styles.statValue }, usedYear)), /* @__PURE__ */ React.createElement("div", { style: styles.statBox }, /* @__PURE__ */ React.createElement("div", { style: styles.statLabel }, "Preostalo"), /* @__PURE__ */ React.createElement("div", { style: { ...styles.statValue, color: remaining !== null && remaining < 0 ? "#a3423a" : "#3f7d5c" } }, remaining === null ? "\u2014" : remaining))), /* @__PURE__ */ React.createElement("div", { style: styles.modalSection, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Unos za ", MONTH_NAMES[month - 1], " ", year, "."), /* @__PURE__ */ React.createElement("div", { style: styles.viewToggle }, /* @__PURE__ */ React.createElement("button", { onClick: switchToDaily, style: { ...styles.toggleBtn, ...mode === "daily" ? styles.toggleBtnActive : {} } }, "Dan po dan"), /* @__PURE__ */ React.createElement("button", { onClick: () => setMode("recap"), style: { ...styles.toggleBtn, ...mode === "recap" ? styles.toggleBtnActive : {} } }, "Rekapitulacija za mjesec")), mode === "daily" ? /* @__PURE__ */ React.createElement("p", { style: styles.hint }, 'Unos se radi klikom na dane u glavnoj tabeli, u tabu "Unos \u0161ihte".') : /* @__PURE__ */ React.createElement(React.Fragment, null, existingRecap ? /* @__PURE__ */ React.createElement("div", { style: styles.recapBadge }, "Ura\u0111ena samo rekapitulacija \u2014 bez unosa po danima") : /* @__PURE__ */ React.createElement("p", { style: styles.hint }, "Unesi ukupan broj dana po statusu za cijeli mjesec, bez klikanja dan po dan. Nakon spremanja, ovaj mjesec za ovog radnika prikazuje se kao rekapitulacija u glavnoj tabeli."), /* @__PURE__ */ React.createElement("div", { style: styles.recapGrid }, STATUSES.map((s) => /* @__PURE__ */ React.createElement("label", { key: s.code, style: styles.recapField }, /* @__PURE__ */ React.createElement("span", { style: { ...styles.recapFieldLabel, color: s.color } }, s.label), /* @__PURE__ */ React.createElement(
+  return /* @__PURE__ */ React.createElement("div", { style: styles.modalOverlay, onClick: onClose, className: "modal-overlay" }, /* @__PURE__ */ React.createElement("div", { style: styles.modalCard, className: "modal-card", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { style: styles.modalHeader }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: styles.modalTitle }, worker.name), group && /* @__PURE__ */ React.createElement("div", { style: styles.modalSubtitle }, group.name)), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6 } }, /* @__PURE__ */ React.createElement("button", { className: "no-print", style: styles.iconBtn, title: "\u0160tampaj karton radnika", onClick: printWorkerCard }, /* @__PURE__ */ React.createElement(IconPrint, { size: 16 })), /* @__PURE__ */ React.createElement("button", { className: "no-print", style: styles.iconBtn, onClick: onClose }, /* @__PURE__ */ React.createElement(IconClose, { size: 16 })))), /* @__PURE__ */ React.createElement(PrintTitle, null, worker.name, " \u2014 karton za ", year, ". godinu ", group ? `(${group.name})` : ""), /* @__PURE__ */ React.createElement("div", { style: styles.modalSection, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Postavke godi\u0161njeg odmora"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("label", { style: styles.recapField }, /* @__PURE__ */ React.createElement("span", { style: styles.recapFieldLabel }, "Broj dana godi\u0161njeg (po godini)"), /* @__PURE__ */ React.createElement("input", { type: "number", min: 0, value: worker.leaveAnnualDays || "", onChange: (e) => updateLeaveSettings({ leaveAnnualDays: e.target.value === "" ? "" : Math.max(0, parseInt(e.target.value, 10) || 0) }), style: styles.smallInput })), /* @__PURE__ */ React.createElement("label", { style: styles.recapField }, /* @__PURE__ */ React.createElement("span", { style: styles.recapFieldLabel }, "Ra\u010duna se od datuma"), /* @__PURE__ */ React.createElement("input", { type: "date", value: worker.leaveStartDate || "", onChange: (e) => updateLeaveSettings({ leaveStartDate: e.target.value }), style: styles.smallInput }))), /* @__PURE__ */ React.createElement("p", { style: styles.hint }, cumulativeConfigured ? `Kumulativni obra\u010dun: ${worker.leaveAnnualDays} dana godi\u0161nje od ${worker.leaveStartDate}, neiskori\u0161teni dani se prenose iz godine u godinu.` : "Ako se popuni broj dana i datum, godi\u0161nji se ra\u010duna kumulativno (prenosi se iz godine u godinu). Ako se ostavi prazno, koristi se stari na\u010din \u2014 dodijeljeno posebno za svaku godinu u tabu \"Radnici\".")), /* @__PURE__ */ React.createElement("div", { style: styles.modalStatsRow }, /* @__PURE__ */ React.createElement("div", { style: styles.statBox }, /* @__PURE__ */ React.createElement("div", { style: styles.statLabel }, "Godi\u0161nji ", year, "."), /* @__PURE__ */ React.createElement("div", { style: styles.statValue }, allocated === "" ? "\u2014" : allocated)), /* @__PURE__ */ React.createElement("div", { style: styles.statBox }, /* @__PURE__ */ React.createElement("div", { style: styles.statLabel }, "Iskori\u0161teno"), /* @__PURE__ */ React.createElement("div", { style: styles.statValue }, usedYear)), /* @__PURE__ */ React.createElement("div", { style: styles.statBox }, /* @__PURE__ */ React.createElement("div", { style: styles.statLabel }, "Preostalo"), /* @__PURE__ */ React.createElement("div", { style: { ...styles.statValue, color: remaining !== null && remaining < 0 ? "#a3423a" : "#3f7d5c" } }, remaining === null ? "\u2014" : remaining))), /* @__PURE__ */ React.createElement("div", { style: styles.modalSection, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.modalSectionTitle }, "Unos za ", MONTH_NAMES[month - 1], " ", year, "."), /* @__PURE__ */ React.createElement("div", { style: styles.viewToggle }, /* @__PURE__ */ React.createElement("button", { onClick: switchToDaily, style: { ...styles.toggleBtn, ...mode === "daily" ? styles.toggleBtnActive : {} } }, "Dan po dan"), /* @__PURE__ */ React.createElement("button", { onClick: () => setMode("recap"), style: { ...styles.toggleBtn, ...mode === "recap" ? styles.toggleBtnActive : {} } }, "Rekapitulacija za mjesec")), mode === "daily" ? /* @__PURE__ */ React.createElement("p", { style: styles.hint }, 'Unos se radi klikom na dane u glavnoj tabeli, u tabu "Unos \u0161ihte".') : /* @__PURE__ */ React.createElement(React.Fragment, null, existingRecap ? /* @__PURE__ */ React.createElement("div", { style: styles.recapBadge }, "Ura\u0111ena samo rekapitulacija \u2014 bez unosa po danima") : /* @__PURE__ */ React.createElement("p", { style: styles.hint }, "Unesi ukupan broj dana po statusu za cijeli mjesec, bez klikanja dan po dan. Nakon spremanja, ovaj mjesec za ovog radnika prikazuje se kao rekapitulacija u glavnoj tabeli."), /* @__PURE__ */ React.createElement("div", { style: styles.recapGrid }, STATUSES.map((s) => /* @__PURE__ */ React.createElement("label", { key: s.code, style: styles.recapField }, /* @__PURE__ */ React.createElement("span", { style: { ...styles.recapFieldLabel, color: s.color } }, s.label), /* @__PURE__ */ React.createElement(
     "input",
     {
       type: "number",
@@ -1057,6 +1352,12 @@ const GLOBAL_CSS = `
       padding: 0 !important; overflow: visible !important; animation: none !important;
     }
     body.printing-worker .modal-card { box-shadow: none !important; max-width: 100% !important; border-radius: 0 !important; animation: none !important; }
+    body.printing-report .app-shell { display: none !important; }
+    body.printing-report .modal-overlay {
+      display: block !important; position: static !important; background: #fff !important;
+      padding: 0 !important; overflow: visible !important; animation: none !important;
+    }
+    body.printing-report .modal-card { box-shadow: none !important; max-width: 100% !important; border-radius: 0 !important; animation: none !important; }
   }
 `;
 const styles = {
