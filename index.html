@@ -72,7 +72,7 @@ const MONTH_NAMES = [
 ];
 const NO_GROUP = "__bez_grupe__";
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
-const APP_VERSION = "v2.0.1";
+const APP_VERSION = "v2.0.2";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -342,7 +342,7 @@ function LoginScreen() {
     e.preventDefault();
     setError("");
     setBusy(true);
-    fbAuth.signInWithEmailAndPassword(email.trim(), password).catch((err) => {
+    fbAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).then(() => fbAuth.signInWithEmailAndPassword(email.trim(), password)).catch((err) => {
       setError(loginErrorMessage(err));
       setBusy(false);
     });
