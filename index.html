@@ -77,7 +77,7 @@ const MONTH_NAMES = [
 const NO_GROUP = "__bez_grupe__";
 const GROUP_COLOR_PALETTE = ["#c0392b", "#d35400", "#c08a2e", "#3f7d5c", "#2b8a8a", "#3b5b74", "#34406b", "#6b4b8a", "#a3427a", "#5c5c5c"];
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
-const APP_VERSION = "v2.5.2";
+const APP_VERSION = "v2.6.0";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -523,6 +523,52 @@ function App({ currentUserEmail }) {
   const [ocrModalOpen, setOcrModalOpen] = useState(false);
   const [backupModalOpen, setBackupModalOpen] = useState(false);
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [rangeModalOpen, setRangeModalOpen] = useState(false);
+  const applyDateRange = useCallback(
+    async ({ workerId, code, startDate, endDate, skipWeekends }) => {
+      if (!workerId || !code || !startDate || !endDate) return { applied: 0, skipped: 0 };
+      const start = new Date(startDate + "T00:00:00");
+      const end = new Date(endDate + "T00:00:00");
+      if (isNaN(start) || isNaN(end) || start > end) return { applied: 0, skipped: 0 };
+      const byMonth = {};
+      let skipped = 0;
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const dow = d.getDay();
+        if (skipWeekends && (dow === 0 || dow === 6)) {
+          skipped++;
+          continue;
+        }
+        const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+        (byMonth[key] || (byMonth[key] = [])).push(d.getDate());
+      }
+      let applied = 0;
+      for (const key of Object.keys(byMonth)) {
+        const days = byMonth[key];
+        applied += days.length;
+        const storageKey = `entries:${key}`;
+        if (storageKey === entriesKey) {
+          setEntries((prev) => {
+            const existing = prev[workerId] || {};
+            const nextWorker = { ...existing };
+            delete nextWorker.__recap;
+            days.forEach((day) => nextWorker[day] = code);
+            const next = { ...prev, [workerId]: nextWorker };
+            storageSet(entriesKey, next);
+            return next;
+          });
+        } else {
+          const monthData = await storageGet(storageKey, {});
+          const existing = monthData[workerId] || {};
+          const nextWorker = { ...existing };
+          delete nextWorker.__recap;
+          days.forEach((day) => nextWorker[day] = code);
+          await storageSet(storageKey, { ...monthData, [workerId]: nextWorker });
+        }
+      }
+      return { applied, skipped };
+    },
+    [entriesKey]
+  );
   const nDays = daysInMonth(year, month);
   const dayArr = Array.from({ length: nDays }, (_, i) => i + 1);
   const loadYear = useCallback(async () => {
@@ -603,7 +649,8 @@ function App({ currentUserEmail }) {
       setBrush,
       dayArr,
       onSelectWorker: setDetailWorkerId,
-      onOpenOcr: () => setOcrModalOpen(true)
+      onOpenOcr: () => setOcrModalOpen(true),
+      onOpenRange: () => setRangeModalOpen(true)
     }
   ) : tab === "radnici" ? /* @__PURE__ */ React.createElement(
     RadniciTab,
@@ -682,7 +729,7 @@ function App({ currentUserEmail }) {
       setCellsBulk,
       onClose: () => setOcrModalOpen(false)
     }
-  ), backupModalOpen && /* @__PURE__ */ React.createElement(BackupModal, { onClose: () => setBackupModalOpen(false) }), printModalOpen && /* @__PURE__ */ React.createElement(PrintReportModal, { workers, groups, year, onClose: () => setPrintModalOpen(false) }));
+  ), backupModalOpen && /* @__PURE__ */ React.createElement(BackupModal, { onClose: () => setBackupModalOpen(false) }), printModalOpen && /* @__PURE__ */ React.createElement(PrintReportModal, { workers, groups, year, onClose: () => setPrintModalOpen(false) }), rangeModalOpen && /* @__PURE__ */ React.createElement(RangeEntryModal, { workers: workers.filter((w) => w.active !== false), onApply: applyDateRange, onClose: () => setRangeModalOpen(false) }));
 }
 function PrintTitle({ children }) {
   return /* @__PURE__ */ React.createElement("div", { className: "print-title", style: { display: "none" } }, /* @__PURE__ */ React.createElement("div", { style: styles.printCompanyLine }, COMPANY_NAME), /* @__PURE__ */ React.createElement("div", null, children));
@@ -759,7 +806,7 @@ function recapSummaryText(counts) {
   const parts = STATUSES.filter((s) => ((counts == null ? void 0 : counts[s.code]) || 0) > 0).map((s) => `${counts[s.code]} ${s.short}`);
   return parts.length ? parts.join(", ") : "bez unesenih dana";
 }
-function UnosTab({ workers, groups, year, setYear, month, setMonth, entries, setCell, brush, setBrush, dayArr, onSelectWorker, onOpenOcr }) {
+function UnosTab({ workers, groups, year, setYear, month, setMonth, entries, setCell, brush, setBrush, dayArr, onSelectWorker, onOpenOcr, onOpenRange }) {
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
   const activeTotal = workers.filter((w) => w.active !== false).length;
@@ -807,7 +854,7 @@ function UnosTab({ workers, groups, year, setYear, month, setMonth, entries, set
       style: { ...styles.brushBtn, background: brush === null ? "#1e293b" : "#fff", color: brush === null ? "#fff" : "#1e293b" }
     },
     "\u232B"
-  ))), /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: totalWorkers, total: activeTotal, active: filterActive })), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: onOpenOcr }, /* @__PURE__ */ React.createElement(IconCamera, { size: 15 }), " Uvoz sa slike (OCR)"), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " PRINTAJ"))), /* @__PURE__ */ React.createElement(PrintTitle, null, "\u0160ihta \u2014 ", MONTH_NAMES[month - 1], " ", year), totalWorkers === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: filterActive ? "Nema radnika koji odgovaraju pretrazi/filteru." : "Nema dodanih radnika. Dodaj ih u tabu 'Radnici i grupe'." }) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), dayArr.map((d) => {
+  ))), /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: totalWorkers, total: activeTotal, active: filterActive })), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: onOpenRange }, "\u{1F4C5} Unesi period"), /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: onOpenOcr }, /* @__PURE__ */ React.createElement(IconCamera, { size: 15 }), " Uvoz sa slike (OCR)"), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " PRINTAJ"))), /* @__PURE__ */ React.createElement(PrintTitle, null, "\u0160ihta \u2014 ", MONTH_NAMES[month - 1], " ", year), totalWorkers === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: filterActive ? "Nema radnika koji odgovaraju pretrazi/filteru." : "Nema dodanih radnika. Dodaj ih u tabu 'Radnici i grupe'." }) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), dayArr.map((d) => {
     const weekend = isWeekend(year, month, d);
     return /* @__PURE__ */ React.createElement("th", { key: d, style: { ...styles.th, ...weekend ? styles.weekendHeader : {}, width: 30 } }, /* @__PURE__ */ React.createElement("div", null, d), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 400, opacity: 0.7 } }, DAY_LETTERS[new Date(year, month - 1, d).getDay()]));
   }))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: dayArr.length + 1, style: groupHeaderStyle(grp.color) }, grp.name)), grp.workers.map((w) => {
@@ -1641,6 +1688,109 @@ function PrintReportModal({ workers, groups, year, onClose }) {
       printTitleEl,
       emptyEl,
       tableEl
+    )
+  );
+}
+function RangeEntryModal({ workers, onApply, onClose }) {
+  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const [workerId, setWorkerId] = useState(workers[0] ? workers[0].id : "");
+  const [code, setCode] = useState("B");
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const [skipWeekends, setSkipWeekends] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const rangeInvalid = startDate && endDate && startDate > endDate;
+  async function handleApply() {
+    setError("");
+    setResult(null);
+    if (!workerId) {
+      setError("Izaberi radnika.");
+      return;
+    }
+    if (rangeInvalid) {
+      setError('Datum "do" ne mo\u017Ee biti prije datuma "od".');
+      return;
+    }
+    setBusy(true);
+    const { applied, skipped } = await onApply({ workerId, code, startDate, endDate, skipWeekends });
+    setBusy(false);
+    if (applied === 0) {
+      setError("Nijedan dan nije unesen (provjeri period).");
+      return;
+    }
+    const statusLabel = STATUSES.find((s) => s.code === code);
+    setResult(`Uneseno ${applied} dana (${statusLabel ? statusLabel.label : code})${skipWeekends && skipped > 0 ? `, presko\u010Deno ${skipped} dana vikenda` : ""}.`);
+  }
+  const headerEl = React.createElement(
+    "div",
+    { style: styles.modalHeader },
+    React.createElement(
+      "div",
+      null,
+      React.createElement("div", { style: styles.modalTitle }, "Unesi period"),
+      React.createElement("div", { style: styles.modalSubtitle }, "Npr. bolovanje ili godi\u0161nji od datuma do datuma")
+    ),
+    React.createElement("button", { style: styles.iconBtn, onClick: onClose }, React.createElement(IconClose, { size: 16 }))
+  );
+  const bodyEl = React.createElement(
+    "div",
+    { style: styles.modalSection },
+    React.createElement(
+      "label",
+      { style: { ...styles.recapField, marginBottom: 10 } },
+      React.createElement("span", { style: styles.recapFieldLabel }, "Radnik"),
+      React.createElement(
+        "select",
+        { value: workerId, onChange: (e) => setWorkerId(e.target.value), style: styles.select },
+        workers.map((w) => React.createElement("option", { key: w.id, value: w.id }, w.name))
+      )
+    ),
+    React.createElement(
+      "label",
+      { style: { ...styles.recapField, marginBottom: 10 } },
+      React.createElement("span", { style: styles.recapFieldLabel }, "Status"),
+      React.createElement(
+        "select",
+        { value: code, onChange: (e) => setCode(e.target.value), style: styles.select },
+        STATUSES.map((s) => React.createElement("option", { key: s.code, value: s.code }, s.label))
+      )
+    ),
+    React.createElement(
+      "div",
+      { style: { display: "flex", gap: 10, marginBottom: 10 } },
+      React.createElement(
+        "label",
+        { style: styles.recapField },
+        React.createElement("span", { style: styles.recapFieldLabel }, "Od datuma"),
+        React.createElement("input", { type: "date", value: startDate, onChange: (e) => setStartDate(e.target.value), style: styles.smallInput })
+      ),
+      React.createElement(
+        "label",
+        { style: styles.recapField },
+        React.createElement("span", { style: styles.recapFieldLabel }, "Do datuma"),
+        React.createElement("input", { type: "date", value: endDate, onChange: (e) => setEndDate(e.target.value), style: styles.smallInput })
+      )
+    ),
+    React.createElement(
+      "label",
+      { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#3a3226", marginBottom: 14, cursor: "pointer" } },
+      React.createElement("input", { type: "checkbox", checked: skipWeekends, onChange: (e) => setSkipWeekends(e.target.checked) }),
+      "Presko\u010Di vikend (subota, nedjelja)"
+    ),
+    error && React.createElement("p", { style: { color: "#a3423a", fontSize: 12, marginBottom: 10 } }, error),
+    result && React.createElement("p", { style: { color: "#3f7d5c", fontSize: 12, fontWeight: 600, marginBottom: 10 } }, result),
+    React.createElement("button", { style: styles.primaryBtn, onClick: handleApply, disabled: busy || !workerId || rangeInvalid }, busy ? "Unosim..." : "Sa\u010Duvaj")
+  );
+  return React.createElement(
+    "div",
+    { style: styles.modalOverlay, onClick: onClose, className: "modal-overlay no-print" },
+    React.createElement(
+      "div",
+      { style: { ...styles.modalCard, maxWidth: 480 }, onClick: (e) => e.stopPropagation() },
+      headerEl,
+      bodyEl
     )
   );
 }
