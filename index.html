@@ -47,15 +47,15 @@ try {
 const STATUSES = [
   { code: "K", label: "Kancelarija", short: "kancelarija", color: "#3b5b74" },
   { code: "T", label: "Teren", short: "teren", color: "#3f7d5c" },
-  { code: "PR", label: "Prekovremeni rad", short: "prekovremeni rad", color: "#2b8a8a" },
-  { code: "NR", label: "No\u0107ni rad", short: "no\u0107ni rad", color: "#34406b" },
   { code: "G", label: "Godi\u0161nji", short: "godi\u0161nji odmor", color: "#c08a2e" },
   { code: "Z", label: "Zastoj", short: "zastoj", color: "#c2662d" },
   { code: "B", label: "Bolovanje", short: "bolovanje", color: "#a3423a" },
   { code: "P", label: "Praznik", short: "praznik", color: "#6b4b8a" },
   { code: "PO", label: "Pla\u0107. odsustvo", short: "pla\u0107eno odsustvo", color: "#7a8a3e" },
   { code: "NO", label: "Nepla\u0107. odsustvo", short: "nepla\u0107eno odsustvo", color: "#8a7f70" },
-  { code: "ND", label: "Neopravdan dan", short: "neopravdan dan", color: "#5c1f1f" }
+  { code: "ND", label: "Neopravdan dan", short: "neopravdan dan", color: "#5c1f1f" },
+  { code: "PR", label: "Prekovremeni rad", short: "prekovremeni rad", color: "#2b8a8a" },
+  { code: "NR", label: "No\u0107ni rad", short: "no\u0107ni rad", color: "#34406b" }
 ];
 const STATUS_MAP = Object.fromEntries(STATUSES.map((s) => [s.code, s]));
 const DAY_LETTERS = ["N", "P", "U", "S", "\u010C", "P", "S"];
@@ -75,7 +75,7 @@ const MONTH_NAMES = [
 ];
 const NO_GROUP = "__bez_grupe__";
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
-const APP_VERSION = "v2.3.0";
+const APP_VERSION = "v2.3.1";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
