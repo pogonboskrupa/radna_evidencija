@@ -47,6 +47,8 @@ try {
 const STATUSES = [
   { code: "K", label: "Kancelarija", short: "kancelarija", color: "#3b5b74" },
   { code: "T", label: "Teren", short: "teren", color: "#3f7d5c" },
+  { code: "PR", label: "Prekovremeni rad", short: "prekovremeni rad", color: "#2b8a8a" },
+  { code: "NR", label: "No\u0107ni rad", short: "no\u0107ni rad", color: "#34406b" },
   { code: "G", label: "Godi\u0161nji", short: "godi\u0161nji odmor", color: "#c08a2e" },
   { code: "Z", label: "Zastoj", short: "zastoj", color: "#c2662d" },
   { code: "B", label: "Bolovanje", short: "bolovanje", color: "#a3423a" },
@@ -73,7 +75,7 @@ const MONTH_NAMES = [
 ];
 const NO_GROUP = "__bez_grupe__";
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
-const APP_VERSION = "v2.2.1";
+const APP_VERSION = "v2.3.0";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -243,7 +245,7 @@ function bestWorkerMatch(rawLine, workers) {
   const threshold = Math.max(3, Math.floor(normalizeText((best == null ? void 0 : best.name) || "").length * 0.55));
   return bestScore <= threshold ? best : null;
 }
-const CODE_TOKEN_RE = /\b(PO|NO|ND|K|T|G|Z|B|P)\b/g;
+const CODE_TOKEN_RE = /\b(PR|NR|PO|NO|ND|K|T|G|Z|B|P)\b/g;
 function extractCodes(line) {
   const matches = (line || "").toUpperCase().match(CODE_TOKEN_RE) || [];
   return matches.join(" ");
@@ -941,7 +943,7 @@ function RekapTab({ workers, groups, year, setYear, month, setMonth, yearEntries
         const remaining = isCumulative ? cumulative ? cumulative.remaining : null : allocated === "" ? null : allocated - usedYear;
         const row = { Radnik: w.name, Grupa: grp.name === "Bez grupe" ? "" : grp.name };
         STATUSES.forEach((s) => row[s.code] = counts[s.code] || 0);
-        row["Radnih dana"] = counts.K + counts.T;
+        row["Radnih dana"] = counts.K + counts.T + counts.PR + counts.NR;
         row["Broj dana godišnjeg po ugovoru"] = allocated === "" ? "" : allocated;
         row["Iskorišteno (godina)"] = usedYear;
         row["Preostalo"] = remaining === null ? "" : remaining;
@@ -973,11 +975,11 @@ function RekapTab({ workers, groups, year, setYear, month, setMonth, yearEntries
       countsForWorkerMonth,
       yearEntries
     }
-  ) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), STATUSES.map((s) => /* @__PURE__ */ React.createElement("th", { key: s.code, style: styles.th, title: s.label }, s.code)), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Radnih dana"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. po ugovoru"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. iskori\u0161teno (god.)"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. preostalo"))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: 14, style: styles.groupHeader }, grp.name)), grp.workers.map((w) => {
+  ) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), STATUSES.map((s) => /* @__PURE__ */ React.createElement("th", { key: s.code, style: styles.th, title: s.label }, s.code)), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Radnih dana"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. po ugovoru"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. iskori\u0161teno (god.)"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. preostalo"))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: 16, style: styles.groupHeader }, grp.name)), grp.workers.map((w) => {
     var _a, _b;
     const counts = countsForWorkerMonth(w.id, month, yearEntries);
     STATUSES.forEach((s) => totals[s.code] += counts[s.code]);
-    const radniDani = counts.K + counts.T;
+    const radniDani = counts.K + counts.T + counts.PR + counts.NR;
     const isCumulative = hasLeaveConfig(w);
     const cumulative = cumulativeMap[w.id];
     const legacyAllocated = (_b = (_a = w.godisnji) == null ? void 0 : _a[year]) != null ? _b : "";
@@ -993,7 +995,7 @@ function TextSummaryView({ groupedWorkers, groups, month, countsForWorkerMonth, 
     const parts = STATUSES.filter((s) => counts[s.code] > 0).map(
       (s) => `${counts[s.code]} ${s.short}`
     );
-    const radniDani = counts.K + counts.T;
+    const radniDani = counts.K + counts.T + counts.PR + counts.NR;
     return /* @__PURE__ */ React.createElement("li", { key: w.id, style: styles.textListItem }, /* @__PURE__ */ React.createElement("span", { style: styles.textWorkerName }, w.name), " \u2014 ", parts.length > 0 ? parts.join(", ") : "nema unesenih dana", ".", radniDani > 0 && /* @__PURE__ */ React.createElement("span", { style: styles.textTotal }, " (ukupno radnih dana: ", radniDani, ")"));
   })))));
 }
@@ -1011,7 +1013,7 @@ function loadTesseract() {
   return ocrLoadPromise;
 }
 const NUMERIC_TOKEN_RE = /^\d+([.,]\d+)?$/;
-const LETTER_CODE_TOKEN_RE = /^(PO|NO|ND|K|T|G|Z|B|P)$/i;
+const LETTER_CODE_TOKEN_RE = /^(PR|NR|PO|NO|ND|K|T|G|Z|B|P)$/i;
 const HOURS_FULL_DAY = 8;
 function clusterWordsIntoRows(words) {
   const valid = (words || []).filter((w) => w.text && w.text.trim() && w.bbox).map((w) => ({
