@@ -6,6 +6,9 @@
 <title>Šihta — evidencija radnog vremena</title>
 <script src="vendor/react.production.min.js"></script>
 <script src="vendor/react-dom.production.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 <style>
   html, body { margin: 0; padding: 0; background: #faf7f0; }
   #root { min-height: 100vh; }
@@ -19,6 +22,26 @@
 <div id="root"></div>
 <script>
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
+const firebaseConfig = {
+  apiKey: "AIzaSyBN_jX1gXBXYpVShkVzasNXwwKdJTkH-28",
+  authDomain: "dnevnik-rada-bea0a.firebaseapp.com",
+  projectId: "dnevnik-rada-bea0a",
+  storageBucket: "dnevnik-rada-bea0a.firebasestorage.app",
+  messagingSenderId: "505668721155",
+  appId: "1:505668721155:web:572ad717655e7347f4cc36",
+  measurementId: "G-CE0RTNGLC2"
+};
+let fbAuth = null;
+let fbDb = null;
+let fbInitError = null;
+try {
+  firebase.initializeApp(firebaseConfig);
+  fbAuth = firebase.auth();
+  fbDb = firebase.firestore();
+} catch (e) {
+  fbInitError = e;
+  console.error("Firebase init failed:", e);
+}
 const STATUSES = [
   { code: "K", label: "Kancelarija", short: "kancelarija", color: "#3b5b74" },
   { code: "T", label: "Teren", short: "teren", color: "#3f7d5c" },
@@ -48,7 +71,7 @@ const MONTH_NAMES = [
 ];
 const NO_GROUP = "__bez_grupe__";
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
-const APP_VERSION = "v1.4.1";
+const APP_VERSION = "v2.0.0";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -224,28 +247,50 @@ function extractCodes(line) {
   return matches.join(" ");
 }
 const STORAGE_PREFIX = "sihta:";
+const FIRESTORE_COLLECTION = "sihta_data";
 async function storageGet(key, fallback) {
   try {
-    const v = localStorage.getItem(STORAGE_PREFIX + key);
-    return v ? JSON.parse(v) : fallback;
+    const doc = await fbDb.collection(FIRESTORE_COLLECTION).doc(key).get();
+    if (doc.exists) {
+      const v = doc.data().value;
+      try {
+        localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(v));
+      } catch (e) {}
+      return v;
+    }
+    return fallback;
   } catch (e) {
+    console.error("Gre\u0161ka pri \u010ditanju iz baze:", e);
+    try {
+      const cached = localStorage.getItem(STORAGE_PREFIX + key);
+      if (cached !== null) return JSON.parse(cached);
+    } catch (e2) {}
     return fallback;
   }
 }
 async function storageSet(key, value) {
   try {
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+  } catch (e) {}
+  try {
+    await fbDb.collection(FIRESTORE_COLLECTION).doc(key).set({ value });
   } catch (e) {
-    console.error("Gre\u0161ka pri spremanju:", e);
+    console.error("Gre\u0161ka pri spremanju u bazu:", e);
   }
 }
 async function storageListKeys() {
-  const keys = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (k && k.startsWith(STORAGE_PREFIX)) keys.push(k.slice(STORAGE_PREFIX.length));
+  try {
+    const snap = await fbDb.collection(FIRESTORE_COLLECTION).get();
+    return snap.docs.map((d) => d.id);
+  } catch (e) {
+    console.error("Gre\u0161ka pri \u010ditanju liste iz baze:", e);
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(STORAGE_PREFIX)) keys.push(k.slice(STORAGE_PREFIX.length));
+    }
+    return keys;
   }
-  return keys;
 }
 async function exportAllData() {
   const keys = await storageListKeys();
@@ -275,7 +320,67 @@ async function importAllData(parsed) {
   }
   return entries.length;
 }
-function App() {
+function loginErrorMessage(err) {
+  const code = err && err.code;
+  if (code === "auth/wrong-password" || code === "auth/user-not-found" || code === "auth/invalid-credential" || code === "auth/invalid-login-credentials") return "Pogrešan email ili lozinka.";
+  if (code === "auth/invalid-email") return "Neispravna email adresa.";
+  if (code === "auth/too-many-requests") return "Previše neuspješnih pokušaja, pokušajte kasnije.";
+  if (code === "auth/network-request-failed") return "Nema internet konekcije.";
+  return "Greška pri prijavi. Pokušajte ponovo.";
+}
+function LoginScreen() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    fbAuth.signInWithEmailAndPassword(email.trim(), password).catch((err) => {
+      setError(loginErrorMessage(err));
+      setBusy(false);
+    });
+  }
+  return /* @__PURE__ */ React.createElement(
+    "div",
+    { style: styles.loginWrap },
+    /* @__PURE__ */ React.createElement(
+      "form",
+      { style: styles.loginCard, onSubmit: handleSubmit },
+      /* @__PURE__ */ React.createElement("div", { style: { ...styles.monogram, margin: "0 auto 14px" } }, "Š"),
+      /* @__PURE__ */ React.createElement("div", { style: styles.loginTitle }, "Šihta"),
+      /* @__PURE__ */ React.createElement("div", { style: styles.loginSubtitle }, "Prijava za pristup evidenciji radnog vremena"),
+      /* @__PURE__ */ React.createElement("input", { type: "email", placeholder: "Email", value: email, onChange: (e) => setEmail(e.target.value), style: { ...styles.input, marginTop: 18 }, required: true, autoFocus: true }),
+      /* @__PURE__ */ React.createElement("input", { type: "password", placeholder: "Lozinka", value: password, onChange: (e) => setPassword(e.target.value), style: { ...styles.input, marginTop: 10 }, required: true }),
+      error && /* @__PURE__ */ React.createElement("p", { style: { color: "#a3423a", fontSize: 13, marginTop: 8 } }, error),
+      /* @__PURE__ */ React.createElement("button", { type: "submit", style: { ...styles.primaryBtn, marginTop: 14, width: "100%" }, disabled: busy }, busy ? "Prijava u toku..." : "Prijavi se")
+    )
+  );
+}
+function AuthGate() {
+  const [user, setUser] = useState(void 0);
+  useEffect(() => {
+    if (!fbAuth) return;
+    return fbAuth.onAuthStateChanged((u) => setUser(u));
+  }, []);
+  if (!fbAuth) return /* @__PURE__ */ React.createElement(
+    "div",
+    { style: styles.loginWrap },
+    /* @__PURE__ */ React.createElement(
+      "div",
+      { style: styles.loginCard },
+      /* @__PURE__ */ React.createElement("div", { style: { ...styles.monogram, margin: "0 auto 14px" } }, "Š"),
+      /* @__PURE__ */ React.createElement("div", { style: styles.loginTitle }, "Šihta"),
+      /* @__PURE__ */ React.createElement("p", { style: { color: "#a3423a", fontSize: 13, marginTop: 14 } }, "Nije moguće povezati se na server. Provjerite internet konekciju i osvježite stranicu (F5)."),
+      /* @__PURE__ */ React.createElement("button", { style: { ...styles.primaryBtn, marginTop: 10 }, onClick: () => window.location.reload() }, "Pokušaj ponovo")
+    )
+  );
+  if (user === void 0) return /* @__PURE__ */ React.createElement("div", { style: { padding: 40 } }, /* @__PURE__ */ React.createElement(LoadingLine, { text: "Učitavanje..." }));
+  if (!user) return /* @__PURE__ */ React.createElement(LoginScreen, null);
+  return /* @__PURE__ */ React.createElement(App, { currentUserEmail: user.email });
+}
+function App({ currentUserEmail }) {
   const [tab, setTab] = useState("unos");
   const [loaded, setLoaded] = useState(false);
   const [workers, setWorkers] = useState([]);
@@ -438,7 +543,7 @@ function App() {
       style: { ...styles.navBtn, ...tab === key ? styles.navBtnActive : {} }
     },
     label
-  )), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Štampanje po radniku, grupi ili prilagođeno", onClick: () => setPrintModalOpen(true) }, /* @__PURE__ */ React.createElement(IconPrint, { size: 14 }), " Štampaj"), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Sigurnosna kopija podataka", onClick: () => setBackupModalOpen(true) }, /* @__PURE__ */ React.createElement(IconSave, { size: 14 }), " Backup"))), !loaded ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "U\u010Ditavanje..." }) : tab === "unos" ? /* @__PURE__ */ React.createElement(
+  )), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Štampanje po radniku, grupi ili prilagođeno", onClick: () => setPrintModalOpen(true) }, /* @__PURE__ */ React.createElement(IconPrint, { size: 14 }), " Štampaj"), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Sigurnosna kopija podataka", onClick: () => setBackupModalOpen(true) }, /* @__PURE__ */ React.createElement(IconSave, { size: 14 }), " Backup"), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: currentUserEmail ? "Prijavljeni kao " + currentUserEmail + " — klikni za odjavu" : "Odjava", onClick: () => fbAuth.signOut() }, "⏻ Odjava"))), !loaded ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "U\u010Ditavanje..." }) : tab === "unos" ? /* @__PURE__ */ React.createElement(
     UnosTab,
     {
       workers,
@@ -1798,9 +1903,13 @@ const styles = {
   recapFieldLabel: { fontSize: 11, fontWeight: 600 },
   searchWrap: { position: "relative", display: "inline-flex", alignItems: "center" },
   searchClearBtn: { position: "absolute", right: 6, border: "none", background: "#e8e0cf", color: INK, borderRadius: "50%", width: 18, height: 18, fontSize: 12, lineHeight: "18px", cursor: "pointer", padding: 0 },
-  filterCount: { fontSize: 11, color: GOLD, fontWeight: 600, whiteSpace: "nowrap" }
+  filterCount: { fontSize: 11, color: GOLD, fontWeight: 600, whiteSpace: "nowrap" },
+  loginWrap: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: PAPER, padding: 20 },
+  loginCard: { background: "#fff", borderRadius: 14, padding: "32px 28px", width: "100%", maxWidth: 340, textAlign: "center", boxShadow: "0 4px 24px rgba(0,0,0,0.08)", border: "1px solid #e8e0cf" },
+  loginTitle: { fontFamily: "'Fraunces', Georgia, serif", fontSize: 24, fontWeight: 600, color: INK },
+  loginSubtitle: { fontSize: 13, color: "#8a7f6d", marginTop: 4 }
 };
-ReactDOM.createRoot(document.getElementById("root")).render(/* @__PURE__ */ React.createElement(App, null));
+ReactDOM.createRoot(document.getElementById("root")).render(/* @__PURE__ */ React.createElement(AuthGate, null));
 
 </script>
 <script>
