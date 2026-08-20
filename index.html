@@ -55,7 +55,8 @@ const STATUSES = [
   { code: "NO", label: "Nepla\u0107. odsustvo", short: "nepla\u0107eno odsustvo", color: "#8a7f70" },
   { code: "ND", label: "Neopravdan dan", short: "neopravdan dan", color: "#5c1f1f" },
   { code: "PR", label: "Prekovremeni rad", short: "prekovremeni rad", color: "#2b8a8a" },
-  { code: "NR", label: "No\u0107ni rad", short: "no\u0107ni rad", color: "#34406b" }
+  { code: "NR", label: "No\u0107ni rad", short: "no\u0107ni rad", color: "#34406b" },
+  { code: "SP", label: "Slu\u017ebeni put", short: "slu\u017ebeni put", color: "#5c7a8a" }
 ];
 const STATUS_MAP = Object.fromEntries(STATUSES.map((s) => [s.code, s]));
 const DAY_LETTERS = ["N", "P", "U", "S", "\u010C", "P", "S"];
@@ -76,7 +77,7 @@ const MONTH_NAMES = [
 const NO_GROUP = "__bez_grupe__";
 const GROUP_COLOR_PALETTE = ["#c0392b", "#d35400", "#c08a2e", "#3f7d5c", "#2b8a8a", "#3b5b74", "#34406b", "#6b4b8a", "#a3427a", "#5c5c5c"];
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
-const APP_VERSION = "v2.4.1";
+const APP_VERSION = "v2.5.0";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -246,7 +247,7 @@ function bestWorkerMatch(rawLine, workers) {
   const threshold = Math.max(3, Math.floor(normalizeText((best == null ? void 0 : best.name) || "").length * 0.55));
   return bestScore <= threshold ? best : null;
 }
-const CODE_TOKEN_RE = /\b(PR|NR|PO|NO|ND|K|T|G|Z|B|P)\b/g;
+const CODE_TOKEN_RE = /\b(PR|NR|SP|PO|NO|ND|K|T|G|Z|B|P)\b/g;
 function extractCodes(line) {
   const matches = (line || "").toUpperCase().match(CODE_TOKEN_RE) || [];
   return matches.join(" ");
@@ -587,7 +588,7 @@ function App({ currentUserEmail }) {
       style: { ...styles.navBtn, ...tab === key ? styles.navBtnActive : {} }
     },
     label
-  )), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Štampanje po radniku, grupi ili prilagođeno", onClick: () => setPrintModalOpen(true) }, /* @__PURE__ */ React.createElement(IconPrint, { size: 14 }), " Štampaj"), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Sigurnosna kopija podataka", onClick: () => setBackupModalOpen(true) }, /* @__PURE__ */ React.createElement(IconSave, { size: 14 }), " Backup"), /* @__PURE__ */ React.createElement("div", { style: styles.userBadgeGroup }, currentUserEmail && /* @__PURE__ */ React.createElement("span", { style: styles.userBadge, title: currentUserEmail }, getUserDisplayName(currentUserEmail)), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Odjava", onClick: () => fbAuth.signOut() }, "⏻ Odjava")))), !loaded ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "U\u010Ditavanje..." }) : tab === "unos" ? /* @__PURE__ */ React.createElement(
+  )), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Štampanje po radniku, grupi ili prilagođeno", onClick: () => setPrintModalOpen(true) }, /* @__PURE__ */ React.createElement(IconPrint, { size: 14 }), " PRINTAJ"), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Sigurnosna kopija podataka", onClick: () => setBackupModalOpen(true) }, /* @__PURE__ */ React.createElement(IconSave, { size: 14 }), " Backup"), /* @__PURE__ */ React.createElement("div", { style: styles.userBadgeGroup }, currentUserEmail && /* @__PURE__ */ React.createElement("span", { style: styles.userBadge, title: currentUserEmail }, getUserDisplayName(currentUserEmail)), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Odjava", onClick: () => fbAuth.signOut() }, "⏻ Odjava")))), !loaded ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "U\u010Ditavanje..." }) : tab === "unos" ? /* @__PURE__ */ React.createElement(
     UnosTab,
     {
       workers,
@@ -806,7 +807,7 @@ function UnosTab({ workers, groups, year, setYear, month, setMonth, entries, set
       style: { ...styles.brushBtn, background: brush === null ? "#1e293b" : "#fff", color: brush === null ? "#fff" : "#1e293b" }
     },
     "\u232B"
-  ))), /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: totalWorkers, total: activeTotal, active: filterActive })), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: onOpenOcr }, /* @__PURE__ */ React.createElement(IconCamera, { size: 15 }), " Uvoz sa slike (OCR)"), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " \u0160tampaj"))), /* @__PURE__ */ React.createElement(PrintTitle, null, "\u0160ihta \u2014 ", MONTH_NAMES[month - 1], " ", year), totalWorkers === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: filterActive ? "Nema radnika koji odgovaraju pretrazi/filteru." : "Nema dodanih radnika. Dodaj ih u tabu 'Radnici i grupe'." }) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), dayArr.map((d) => {
+  ))), /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: totalWorkers, total: activeTotal, active: filterActive })), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: onOpenOcr }, /* @__PURE__ */ React.createElement(IconCamera, { size: 15 }), " Uvoz sa slike (OCR)"), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " PRINTAJ"))), /* @__PURE__ */ React.createElement(PrintTitle, null, "\u0160ihta \u2014 ", MONTH_NAMES[month - 1], " ", year), totalWorkers === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: filterActive ? "Nema radnika koji odgovaraju pretrazi/filteru." : "Nema dodanih radnika. Dodaj ih u tabu 'Radnici i grupe'." }) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), dayArr.map((d) => {
     const weekend = isWeekend(year, month, d);
     return /* @__PURE__ */ React.createElement("th", { key: d, style: { ...styles.th, ...weekend ? styles.weekendHeader : {}, width: 30 } }, /* @__PURE__ */ React.createElement("div", null, d), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 400, opacity: 0.7 } }, DAY_LETTERS[new Date(year, month - 1, d).getDay()]));
   }))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: dayArr.length + 1, style: groupHeaderStyle(grp.color) }, grp.name)), grp.workers.map((w) => {
@@ -962,7 +963,7 @@ function RekapTab({ workers, groups, year, setYear, month, setMonth, yearEntries
         const remaining = isCumulative ? cumulative ? cumulative.remaining : null : allocated === "" ? null : allocated - usedYear;
         const row = { Radnik: w.name, Grupa: grp.name === "Bez grupe" ? "" : grp.name };
         STATUSES.forEach((s) => row[s.code] = counts[s.code] || 0);
-        row["Radnih dana"] = counts.K + counts.T + counts.PR + counts.NR;
+        row["Radnih dana"] = counts.K + counts.T + counts.PR + counts.NR + counts.SP;
         row["Broj dana godišnjeg po ugovoru"] = allocated === "" ? "" : allocated;
         row["Iskorišteno (godina)"] = usedYear;
         row["Preostalo"] = remaining === null ? "" : remaining;
@@ -985,7 +986,7 @@ function RekapTab({ workers, groups, year, setYear, month, setMonth, yearEntries
       style: { ...styles.toggleBtn, ...view === "tekst" ? styles.toggleBtnActive : {} }
     },
     "\u{1F4DD} Ispis za mjesec"
-  )), /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: handleExportExcel }, "\u{1F4CA} Izvezi u Excel"), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " \u0160tampaj"))), /* @__PURE__ */ React.createElement(PrintTitle, null, view === "tabela" ? "Rekapitulacija" : "Pregled rada za mjesec", " \u2014 ", MONTH_NAMES[month - 1], " ", year), recapLoading || !yearEntries ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "Ra\u010Dunanje rekapitulacije..." }) : shownTotal === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: "Nema radnika koji odgovaraju filteru." }) : view === "tekst" ? /* @__PURE__ */ React.createElement(
+  )), /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: handleExportExcel }, "\u{1F4CA} Izvezi u Excel"), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " PRINTAJ"))), /* @__PURE__ */ React.createElement(PrintTitle, null, view === "tabela" ? "Rekapitulacija" : "Pregled rada za mjesec", " \u2014 ", MONTH_NAMES[month - 1], " ", year), recapLoading || !yearEntries ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "Ra\u010Dunanje rekapitulacije..." }) : shownTotal === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { text: "Nema radnika koji odgovaraju filteru." }) : view === "tekst" ? /* @__PURE__ */ React.createElement(
     TextSummaryView,
     {
       groupedWorkers,
@@ -994,11 +995,11 @@ function RekapTab({ workers, groups, year, setYear, month, setMonth, yearEntries
       countsForWorkerMonth,
       yearEntries
     }
-  ) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), STATUSES.map((s) => /* @__PURE__ */ React.createElement("th", { key: s.code, style: styles.th, title: s.label }, s.code)), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Radnih dana"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. po ugovoru"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. iskori\u0161teno (god.)"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. preostalo"))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: 16, style: groupHeaderStyle(grp.color) }, grp.name)), grp.workers.map((w) => {
+  ) : /* @__PURE__ */ React.createElement("div", { style: styles.tableScroll }, /* @__PURE__ */ React.createElement("table", { style: styles.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { style: { ...styles.th, ...styles.stickyCol, textAlign: "left" } }, "Radnik"), STATUSES.map((s) => /* @__PURE__ */ React.createElement("th", { key: s.code, style: styles.th, title: s.label }, s.code)), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "Radnih dana"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. po ugovoru"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. iskori\u0161teno (god.)"), /* @__PURE__ */ React.createElement("th", { style: styles.th }, "God. preostalo"))), /* @__PURE__ */ React.createElement("tbody", null, groupedWorkers.map((grp) => /* @__PURE__ */ React.createElement(React.Fragment, null, groups.length > 0 && /* @__PURE__ */ React.createElement("tr", { key: "h-" + grp.id }, /* @__PURE__ */ React.createElement("td", { colSpan: 17, style: groupHeaderStyle(grp.color) }, grp.name)), grp.workers.map((w) => {
     var _a, _b;
     const counts = countsForWorkerMonth(w.id, month, yearEntries);
     STATUSES.forEach((s) => totals[s.code] += counts[s.code]);
-    const radniDani = counts.K + counts.T + counts.PR + counts.NR;
+    const radniDani = counts.K + counts.T + counts.PR + counts.NR + counts.SP;
     const isCumulative = hasLeaveConfig(w);
     const cumulative = cumulativeMap[w.id];
     const legacyAllocated = (_b = (_a = w.godisnji) == null ? void 0 : _a[year]) != null ? _b : "";
@@ -1014,7 +1015,7 @@ function TextSummaryView({ groupedWorkers, groups, month, countsForWorkerMonth, 
     const parts = STATUSES.filter((s) => counts[s.code] > 0).map(
       (s) => `${counts[s.code]} ${s.short}`
     );
-    const radniDani = counts.K + counts.T + counts.PR + counts.NR;
+    const radniDani = counts.K + counts.T + counts.PR + counts.NR + counts.SP;
     return /* @__PURE__ */ React.createElement("li", { key: w.id, style: styles.textListItem }, /* @__PURE__ */ React.createElement("span", { style: styles.textWorkerName }, w.name), " \u2014 ", parts.length > 0 ? parts.join(", ") : "nema unesenih dana", ".", radniDani > 0 && /* @__PURE__ */ React.createElement("span", { style: styles.textTotal }, " (ukupno radnih dana: ", radniDani, ")"));
   })))));
 }
@@ -1032,7 +1033,7 @@ function loadTesseract() {
   return ocrLoadPromise;
 }
 const NUMERIC_TOKEN_RE = /^\d+([.,]\d+)?$/;
-const LETTER_CODE_TOKEN_RE = /^(PR|NR|PO|NO|ND|K|T|G|Z|B|P)$/i;
+const LETTER_CODE_TOKEN_RE = /^(PR|NR|SP|PO|NO|ND|K|T|G|Z|B|P)$/i;
 const HOURS_FULL_DAY = 8;
 function clusterWordsIntoRows(words) {
   const valid = (words || []).filter((w) => w.text && w.text.trim() && w.bbox).map((w) => ({
@@ -1289,7 +1290,7 @@ function GodisnjiTab({ workers, saveWorkers, groups, year, setYear, yearEntries,
     }));
     exportRowsToExcel(`Godisnji_odmor_${year}.xlsx`, "Godisnji odmor", rows);
   }
-  const godisnjiToolbarEl = /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.yearPicker }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, "Godina:"), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year - 1) }, /* @__PURE__ */ React.createElement(IconChevronLeft, { size: 16 })), /* @__PURE__ */ React.createElement("div", { style: styles.monthLabel }, year), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year + 1) }, /* @__PURE__ */ React.createElement(IconChevronRight, { size: 16 }))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: shownTotal, total: activeTotal, active: filterActive }), sortKey && /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: () => setSortKey(null) }, "✕ Poništi sortiranje"), /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: handleGodisnjiExportExcel }, "\u{1F4CA} Izvezi u Excel"), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " Štampaj")));
+  const godisnjiToolbarEl = /* @__PURE__ */ React.createElement("div", { style: styles.toolbar, className: "no-print" }, /* @__PURE__ */ React.createElement("div", { style: styles.yearPicker }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, "Godina:"), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year - 1) }, /* @__PURE__ */ React.createElement(IconChevronLeft, { size: 16 })), /* @__PURE__ */ React.createElement("div", { style: styles.monthLabel }, year), /* @__PURE__ */ React.createElement("button", { style: styles.iconBtn, onClick: () => setYear(year + 1) }, /* @__PURE__ */ React.createElement(IconChevronRight, { size: 16 }))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } }, /* @__PURE__ */ React.createElement(SearchBox, { search, setSearch }), /* @__PURE__ */ React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }), /* @__PURE__ */ React.createElement(FilterCount, { shown: shownTotal, total: activeTotal, active: filterActive }), sortKey && /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: () => setSortKey(null) }, "✕ Poništi sortiranje"), /* @__PURE__ */ React.createElement("button", { style: styles.secondaryBtn, onClick: handleGodisnjiExportExcel }, "\u{1F4CA} Izvezi u Excel"), /* @__PURE__ */ React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, /* @__PURE__ */ React.createElement(IconPrint, { size: 15 }), " PRINTAJ")));
   const godisnjiTableEl = /* @__PURE__ */ React.createElement(
     "div",
     { style: styles.tableScroll },
@@ -1378,7 +1379,7 @@ function BolovanjeTab({ workers, groups, year, setYear, yearEntries, recapLoadin
       React.createElement(GroupFilter, { groups, groupFilter, setGroupFilter }),
       React.createElement(FilterCount, { shown: shownTotal, total: activeTotal, active: filterActive }),
       sortDir && React.createElement("button", { style: styles.secondaryBtn, onClick: () => setSortDir(null) }, "\u2715 Poni\u0161ti sortiranje"),
-      React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, React.createElement(IconPrint, { size: 15 }), " \u0160tampaj")
+      React.createElement("button", { style: styles.primaryBtn, onClick: () => window.print() }, React.createElement(IconPrint, { size: 15 }), " PRINTAJ")
     )
   );
   const statsEl = stats ? React.createElement(
@@ -1610,7 +1611,7 @@ function PrintReportModal({ workers, groups, year, onClose }) {
     "div",
     { style: { display: "flex", gap: 8, marginTop: 14, alignItems: "center" } },
     React.createElement("button", { style: styles.primaryBtn, onClick: buildPreview, disabled: loading }, loading ? "Učitavanje..." : "Prikaži pregled"),
-    React.createElement("button", { style: styles.secondaryBtn, onClick: handlePrint, disabled: !rows || rows.length === 0 }, React.createElement(IconPrint, { size: 14 }), " Štampaj")
+    React.createElement("button", { style: styles.secondaryBtn, onClick: handlePrint, disabled: !rows || rows.length === 0 }, React.createElement(IconPrint, { size: 14 }), " PRINTAJ")
   );
   const configSectionEl = React.createElement(
     "div",
