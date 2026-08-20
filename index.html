@@ -72,7 +72,7 @@ const MONTH_NAMES = [
 ];
 const NO_GROUP = "__bez_grupe__";
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
-const APP_VERSION = "v2.0.2";
+const APP_VERSION = "v2.1.0";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -325,6 +325,13 @@ async function importAllData(parsed) {
   }
   return entries.length;
 }
+const USER_DISPLAY_NAMES = {
+  "kemal.poric@ussume.ba": "Kemal Porić"
+};
+function getUserDisplayName(email) {
+  if (!email) return "";
+  return USER_DISPLAY_NAMES[email.toLowerCase()] || email;
+}
 function loginErrorMessage(err) {
   const code = err && err.code;
   if (code === "auth/wrong-password" || code === "auth/user-not-found" || code === "auth/invalid-credential" || code === "auth/invalid-login-credentials") return "Pogrešan email ili lozinka.";
@@ -548,7 +555,7 @@ function App({ currentUserEmail }) {
       style: { ...styles.navBtn, ...tab === key ? styles.navBtnActive : {} }
     },
     label
-  )), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Štampanje po radniku, grupi ili prilagođeno", onClick: () => setPrintModalOpen(true) }, /* @__PURE__ */ React.createElement(IconPrint, { size: 14 }), " Štampaj"), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Sigurnosna kopija podataka", onClick: () => setBackupModalOpen(true) }, /* @__PURE__ */ React.createElement(IconSave, { size: 14 }), " Backup"), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: currentUserEmail ? "Prijavljeni kao " + currentUserEmail + " — klikni za odjavu" : "Odjava", onClick: () => fbAuth.signOut() }, "⏻ Odjava"))), !loaded ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "U\u010Ditavanje..." }) : tab === "unos" ? /* @__PURE__ */ React.createElement(
+  )), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Štampanje po radniku, grupi ili prilagođeno", onClick: () => setPrintModalOpen(true) }, /* @__PURE__ */ React.createElement(IconPrint, { size: 14 }), " Štampaj"), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Sigurnosna kopija podataka", onClick: () => setBackupModalOpen(true) }, /* @__PURE__ */ React.createElement(IconSave, { size: 14 }), " Backup"), /* @__PURE__ */ React.createElement("div", { style: styles.userBadgeGroup }, currentUserEmail && /* @__PURE__ */ React.createElement("span", { style: styles.userBadge, title: currentUserEmail }, getUserDisplayName(currentUserEmail)), /* @__PURE__ */ React.createElement("button", { style: styles.backupBtn, title: "Odjava", onClick: () => fbAuth.signOut() }, "⏻ Odjava")))), !loaded ? /* @__PURE__ */ React.createElement(LoadingLine, { text: "U\u010Ditavanje..." }) : tab === "unos" ? /* @__PURE__ */ React.createElement(
     UnosTab,
     {
       workers,
@@ -1912,7 +1919,9 @@ const styles = {
   loginWrap: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: PAPER, padding: 20 },
   loginCard: { background: "#fff", borderRadius: 14, padding: "32px 28px", width: "100%", maxWidth: 340, textAlign: "center", boxShadow: "0 4px 24px rgba(0,0,0,0.08)", border: "1px solid #e8e0cf" },
   loginTitle: { fontFamily: "'Fraunces', Georgia, serif", fontSize: 24, fontWeight: 600, color: INK },
-  loginSubtitle: { fontSize: 13, color: "#8a7f6d", marginTop: 4 }
+  loginSubtitle: { fontSize: 13, color: "#8a7f6d", marginTop: 4 },
+  userBadgeGroup: { display: "flex", alignItems: "center", gap: 8, marginLeft: 4, paddingLeft: 10, borderLeft: "1px solid #e8e0cf" },
+  userBadge: { fontSize: 12, fontWeight: 700, color: FOREST_DARK, background: "#f3ead2", padding: "6px 10px", borderRadius: 8, whiteSpace: "nowrap" }
 };
 ReactDOM.createRoot(document.getElementById("root")).render(/* @__PURE__ */ React.createElement(AuthGate, null));
 
