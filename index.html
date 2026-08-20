@@ -73,7 +73,7 @@ const MONTH_NAMES = [
 ];
 const NO_GROUP = "__bez_grupe__";
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
-const APP_VERSION = "v2.2.0";
+const APP_VERSION = "v2.2.1";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -1945,7 +1945,7 @@ const styles = {
   weekendHeader: { background: FOREST_DARK },
   td: { padding: "7px 6px", textAlign: "center", borderBottom: "1px solid #f1ece0", whiteSpace: "nowrap" },
   cell: { padding: "6px 0", textAlign: "center", borderBottom: "1px solid #f1ece0", borderLeft: "1px solid #faf7f0", cursor: "pointer", fontWeight: 700, userSelect: "none" },
-  stickyCol: { position: "sticky", left: 0, background: "#fff", zIndex: 1, boxShadow: "1px 0 0 #e8e0cf", minWidth: 150 },
+  stickyCol: { position: "sticky", left: 0, background: "#fff", zIndex: 1, boxShadow: "1px 0 0 #e8e0cf", width: 150, maxWidth: 150, whiteSpace: "normal", wordBreak: "break-word" },
   weekendCol: { background: "#eee7d6" },
   groupHeader: { textAlign: "left", background: "#f3ead2", color: FOREST_DARK, fontWeight: 700, padding: "7px 10px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #e8e0cf", borderTop: "1px solid #e8e0cf" },
   legend: { display: "flex", flexWrap: "wrap", gap: 16, marginTop: 16, fontSize: 12, color: "#5c5646" },
