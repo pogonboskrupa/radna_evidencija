@@ -8,7 +8,7 @@
 <script src="vendor/react-dom.production.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
 <style>
   html, body { margin: 0; padding: 0; background: #faf7f0; }
   #root { min-height: 100vh; }
@@ -25,6 +25,7 @@ const { useState, useEffect, useCallback, useMemo, useRef } = React;
 const firebaseConfig = {
   apiKey: "AIzaSyBN_jX1gXBXYpVShkVzasNXwwKdJTkH-28",
   authDomain: "dnevnik-rada-bea0a.firebaseapp.com",
+  databaseURL: "https://dnevnik-rada-bea0a-default-rtdb.europe-west1.firebasedatabase.app",
   projectId: "dnevnik-rada-bea0a",
   storageBucket: "dnevnik-rada-bea0a.firebasestorage.app",
   messagingSenderId: "505668721155",
@@ -37,7 +38,7 @@ let fbInitError = null;
 try {
   firebase.initializeApp(firebaseConfig);
   fbAuth = firebase.auth();
-  fbDb = firebase.firestore();
+  fbDb = firebase.database();
 } catch (e) {
   fbInitError = e;
   console.error("Firebase init failed:", e);
@@ -71,7 +72,7 @@ const MONTH_NAMES = [
 ];
 const NO_GROUP = "__bez_grupe__";
 const COMPANY_NAME = '\u0160PD "Unsko-sanske \u0161ume" d.o.o.';
-const APP_VERSION = "v2.0.0";
+const APP_VERSION = "v2.0.1";
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -247,12 +248,15 @@ function extractCodes(line) {
   return matches.join(" ");
 }
 const STORAGE_PREFIX = "sihta:";
-const FIRESTORE_COLLECTION = "sihta_data";
+const RTDB_ROOT = "sihta_data";
+function rtdbKeyPath(key) {
+  return RTDB_ROOT + "/" + encodeURIComponent(key);
+}
 async function storageGet(key, fallback) {
   try {
-    const doc = await fbDb.collection(FIRESTORE_COLLECTION).doc(key).get();
-    if (doc.exists) {
-      const v = doc.data().value;
+    const snap = await fbDb.ref(rtdbKeyPath(key)).once("value");
+    if (snap.exists()) {
+      const v = snap.val();
       try {
         localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(v));
       } catch (e) {}
@@ -273,15 +277,16 @@ async function storageSet(key, value) {
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
   } catch (e) {}
   try {
-    await fbDb.collection(FIRESTORE_COLLECTION).doc(key).set({ value });
+    await fbDb.ref(rtdbKeyPath(key)).set(value);
   } catch (e) {
     console.error("Gre\u0161ka pri spremanju u bazu:", e);
   }
 }
 async function storageListKeys() {
   try {
-    const snap = await fbDb.collection(FIRESTORE_COLLECTION).get();
-    return snap.docs.map((d) => d.id);
+    const snap = await fbDb.ref(RTDB_ROOT).once("value");
+    const val = snap.val() || {};
+    return Object.keys(val).map((k) => decodeURIComponent(k));
   } catch (e) {
     console.error("Gre\u0161ka pri \u010ditanju liste iz baze:", e);
     const keys = [];
